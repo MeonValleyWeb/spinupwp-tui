@@ -1,0 +1,33 @@
+{
+  "name": "spinupwp-cli-dashboard",
+  "version": "0.1.0",
+  "description": "A cool terminal UI for browsing and monitoring your SpinupWP servers and sites.",
+  "type": "module",
+  "bin": {
+    "spinup": "./src/index.tsx"
+  },
+  "scripts": {
+    "dev": "bun run src/index.tsx",
+    "start": "bun run src/index.tsx",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "spinupwp",
+    "cli",
+    "tui",
+    "opentui",
+    "wordpress",
+    "devops"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@opentui/core": "latest",
+    "@opentui/react": "latest",
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "typescript": "^5.6.0"
+  }
+}
