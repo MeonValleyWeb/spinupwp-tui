@@ -60,6 +60,37 @@ bun run start
 On first launch, if no token is configured you'll be guided through a short
 onboarding flow that validates your token and saves it locally.
 
+### Run `spinup` from anywhere
+
+Install the `spinup` command globally with a symlink to this checkout (updates as
+you pull):
+
+```sh
+bun run link-global      # = bun link; creates `spinup` on your PATH
+spinup login             # save your API token to the config file (once)
+spinup                   # launch from any directory
+```
+
+`spinup login` is what makes it work outside the project: the project `.env` is
+only read from the project directory, so the global command relies on the token
+saved in the config file. (Run `bun run unlink-global` to remove the command.)
+
+For a standalone binary that doesn't need Bun on `PATH` at runtime:
+
+```sh
+bun run build:binary     # produces ./spinup — move it onto your PATH
+```
+
+#### CLI subcommands
+
+```
+spinup            Launch the dashboard
+spinup login      Set or update your saved API token
+spinup where      Show the config path and which source the token came from
+spinup --version  Print the version
+spinup --help     Show help
+```
+
 ## Configuration
 
 The token is resolved in this order (first match wins):

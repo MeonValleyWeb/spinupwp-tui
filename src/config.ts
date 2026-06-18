@@ -9,7 +9,7 @@
 
 import { homedir } from "node:os"
 import { join } from "node:path"
-import { mkdir } from "node:fs/promises"
+import { mkdir, chmod } from "node:fs/promises"
 import { existsSync, readFileSync } from "node:fs"
 
 export const DEFAULT_BASE_URL = "https://api.spinupwp.app/v1"
@@ -75,5 +75,12 @@ export async function saveConfig(partial: StoredConfig): Promise<void> {
   await mkdir(dir, { recursive: true })
   const current = readStoredConfig()
   const next: StoredConfig = { ...current, ...partial }
-  await Bun.write(configPath(), JSON.stringify(next, null, 2) + "\n")
+  const path = configPath()
+  await Bun.write(path, JSON.stringify(next, null, 2) + "\n")
+  // The file holds an API token — restrict it to the owner.
+  try {
+    await chmod(path, 0o600)
+  } catch {
+    // Best-effort (e.g. on filesystems without POSIX perms).
+  }
 }

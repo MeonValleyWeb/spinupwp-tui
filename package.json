@@ -9,7 +9,10 @@
   "scripts": {
     "dev": "bun run src/index.tsx",
     "start": "bun run src/index.tsx",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "link-global": "bun link",
+    "unlink-global": "bun unlink",
+    "build:binary": "bun build src/index.tsx --compile --outfile spinup"
   },
   "keywords": [
     "spinupwp",
