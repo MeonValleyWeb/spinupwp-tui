@@ -22,6 +22,7 @@ const SECTIONS: { title: string; keys: [string, string][] }[] = [
       ["← / Esc", "Go back / collapse"],
       ["Tab", "Switch focus between columns"],
       ["o", "Open the selected site's URL in your browser"],
+      ["h", "Live server health (CPU/mem/disk over SSH)"],
       ["g / G", "Jump to top / bottom"],
     ],
   },

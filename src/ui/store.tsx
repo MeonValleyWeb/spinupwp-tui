@@ -34,6 +34,11 @@ interface StoreValue extends DataState {
   // When true, a modal overlay (e.g. help) is open and views should ignore navigation keys.
   overlayOpen: boolean
   setOverlayOpen: (v: boolean) => void
+  // The server whose live health view is open, or null. Set by the Browser.
+  healthServer: Server | null
+  setHealthServer: (s: Server | null) => void
+  // Optional SSH user override for the health view (from env/config).
+  sshUser: string | null
   sitesForServer: (serverId: number) => Site[]
   serverById: (id: number | null | undefined) => Server | undefined
 }
@@ -47,9 +52,10 @@ export function useStore(): StoreValue {
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
+  const cfgRef = useRef(loadConfig())
   const clientRef = useRef<SpinupWPClient | null>(null)
   if (!clientRef.current) {
-    clientRef.current = new SpinupWPClient(loadConfig())
+    clientRef.current = new SpinupWPClient(cfgRef.current)
   }
   const client = clientRef.current
 
@@ -63,6 +69,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [route, setRoute] = useState<Route>("dashboard")
   const [inputMode, setInputMode] = useState(false)
   const [overlayOpen, setOverlayOpen] = useState(false)
+  const [healthServer, setHealthServer] = useState<Server | null>(null)
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -117,6 +124,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setInputMode,
     overlayOpen,
     setOverlayOpen,
+    healthServer,
+    setHealthServer,
+    sshUser: cfgRef.current.sshUser,
     sitesForServer,
     serverById,
   }

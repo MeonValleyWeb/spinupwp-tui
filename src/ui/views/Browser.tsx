@@ -20,7 +20,7 @@ type Focus = "servers" | "sites"
 
 export function Browser({ rows }: { rows: number }) {
   const store = useStore()
-  const { servers, sitesForServer, route, inputMode, overlayOpen } = store
+  const { servers, sitesForServer, route, inputMode, overlayOpen, setHealthServer } = store
 
   const [serverIndex, setServerIndex] = useState(0)
   const [siteIndex, setSiteIndex] = useState(0)
@@ -72,7 +72,6 @@ export function Browser({ rows }: { rows: number }) {
         if (focus === "servers" && sites.length > 0) setFocus("sites")
         return
       case "left":
-      case "h":
       case "escape":
         if (focus === "sites") setFocus("servers")
         return
@@ -83,6 +82,10 @@ export function Browser({ rows }: { rows: number }) {
           setFlash(`Opening ${s.domain}…`)
           setTimeout(() => setFlash(null), 1500)
         }
+        return
+      case "h":
+        // Open the live health view for the current server (works from either pane).
+        if (server) setHealthServer(server)
         return
     }
   })
@@ -95,12 +98,13 @@ export function Browser({ rows }: { rows: number }) {
       ? [
           { key: "↑↓/jk", label: "select" },
           { key: "→/⏎", label: "view sites" },
-          { key: "o", label: "open site" },
+          { key: "h", label: "health" },
         ]
       : [
           { key: "↑↓/jk", label: "select site" },
           { key: "←/esc", label: "back" },
-          { key: "o", label: "open in browser" },
+          { key: "o", label: "open" },
+          { key: "h", label: "health" },
         ]
 
   return (

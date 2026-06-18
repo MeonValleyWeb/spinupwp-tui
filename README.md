@@ -30,6 +30,9 @@ A fast, keyboard-driven terminal dashboard for browsing and monitoring your
   domain, or IP. Jump straight to anything.
 - **Events feed** — recent provisioning and operation activity, with per-event
   detail and output.
+- **Live server health** — press `h` on any server for a real-time view over
+  SSH: CPU (aggregate + per-core + sparkline), load, memory/swap, disk mounts,
+  and top processes. Polls every few seconds. (See "Server health" below.)
 - **Open in browser** — press `o` on any site to open it in your default browser.
 
 > The tool is **read-only** today (it works great with a Read Only API token).
@@ -84,10 +87,29 @@ screen) and relaunch, or set the environment variable.
 | `Tab` | Switch focus between columns |
 | `g` / `G` | Jump to top / bottom |
 | `o` | Open the selected site in your browser |
+| `h` | Live server health (CPU/mem/disk over SSH) |
 | `/` | Jump to global search |
 | `r` | Refresh data from the API |
 | `?` | Toggle the help overlay |
 | `q` / `Ctrl+C` | Quit |
+
+## Server health (SSH)
+
+The SpinupWP API exposes no live metrics, so the health view (`h` in the
+Servers tab) reaches the server directly over SSH using **your local SSH keys /
+agent** — the same way you'd `ssh in` and run `htop`. It runs a single batched,
+**read-only** command (`cat /proc/*`, `df`, `ps`) and renders the result.
+
+- **Connection target** is derived from the API: it connects as one of the
+  server's `site_user`s at the server's IP (`site_user@ip`). No extra config
+  needed if `ssh site_user@ip` already works from your terminal.
+- **Non-interactive:** it uses `BatchMode=yes`, so if key auth isn't already set
+  up it fails fast with a hint rather than prompting for a password.
+- **Override the SSH user** (e.g. to use `root` or a sudo user) with the
+  `SPINUPWP_SSH_USER` environment variable, or `"sshUser"` in the config file.
+- A persistent `ControlMaster` connection keeps repeated polls fast.
+
+Nothing is ever written to the server.
 
 ## Development
 

@@ -11,6 +11,7 @@ import { Dashboard } from "./views/Dashboard.tsx"
 import { Browser } from "./views/Browser.tsx"
 import { Search } from "./views/Search.tsx"
 import { Events } from "./views/Events.tsx"
+import { Health } from "./views/Health.tsx"
 
 const MIN_SPLASH_MS = 1200
 
@@ -28,9 +29,10 @@ export function App() {
   }, [])
 
   // Keep views aware that a modal is open so they pause their own key handling.
+  const overlayActive = showHelp || store.healthServer !== null
   useEffect(() => {
-    store.setOverlayOpen(showHelp)
-  }, [showHelp, store])
+    store.setOverlayOpen(overlayActive)
+  }, [overlayActive, store])
 
   function quit() {
     try {
@@ -47,6 +49,9 @@ export function App() {
 
     // While a text field is focused, let it consume everything else.
     if (store.inputMode) return
+
+    // The health overlay owns the keyboard while open (it handles Esc/q/r/h).
+    if (store.healthServer) return
 
     if (showHelp) {
       if (key.name === "escape" || key.name === "q" || key.name === "?") setShowHelp(false)
@@ -102,6 +107,7 @@ export function App() {
         {store.route === "events" && <Events rows={contentRows} />}
       </box>
       {showHelp && <HelpOverlay onClose={() => setShowHelp(false)} />}
+      {store.healthServer && <Health />}
     </box>
   )
 }

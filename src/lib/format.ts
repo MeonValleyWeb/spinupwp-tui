@@ -55,6 +55,31 @@ export function timeAgo(iso: string | null | undefined): string {
   return `${Math.floor(months / 12)}y ago`
 }
 
+// Compact uptime, e.g. "36d 5h", "5h 12m", "3m".
+export function formatUptime(secs: number | null | undefined): string {
+  if (!secs || secs < 0) return "—"
+  const d = Math.floor(secs / 86400)
+  const h = Math.floor((secs % 86400) / 3600)
+  const m = Math.floor((secs % 3600) / 60)
+  if (d > 0) return `${d}d ${h}h`
+  if (h > 0) return `${h}h ${m}m`
+  return `${m}m`
+}
+
+const SPARK_CHARS = ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"]
+
+// Render a series (0..max) as a unicode sparkline of the most recent `width` points.
+export function sparkline(values: number[], width = 30, max = 100): string {
+  if (values.length === 0) return ""
+  const recent = values.slice(-width)
+  return recent
+    .map((v) => {
+      const frac = Math.min(1, Math.max(0, v / max))
+      return SPARK_CHARS[Math.min(SPARK_CHARS.length - 1, Math.round(frac * (SPARK_CHARS.length - 1)))]
+    })
+    .join("")
+}
+
 export function truncate(s: string | null | undefined, max: number): string {
   if (!s) return ""
   if (s.length <= max) return s
