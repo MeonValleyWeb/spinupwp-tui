@@ -19,6 +19,13 @@ versions; such changes are called out here.
   in the site detail panel, and a new **Stacks** tab (key `3`) showing fleet
   composition (counts + bars), drill-down into the sites of a selected stack,
   and the fleet-wide PHP version distribution with end-of-life versions flagged.
+- **Tier-2 stack probe (`d`).** On-demand, read-only SSH probe of a selected
+  site in the Stacks tab that inspects the filesystem to name what the API can't:
+  WordPress (with version), Bedrock, WHMCS, Laravel, and Static HTML — catching
+  sites the API mislabels (e.g. WordPress installed outside SpinupWP's installer
+  reports `is_wordpress=false`). Results are cached to disk
+  (`~/.config/spinupwp-tui/stack-cache.json`), hydrated at startup and written
+  through per probe, so probes survive restarts without re-running SSH.
 
 ### Changed
 - Tab keys shifted to make room for Stacks: Search is now `4`, Events is `5`.

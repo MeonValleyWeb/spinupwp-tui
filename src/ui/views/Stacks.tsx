@@ -11,7 +11,8 @@ import { useKeyboard } from "@opentui/react"
 import { theme, statusColor, statusDot } from "../../lib/theme.ts"
 import { bar, truncate } from "../../lib/format.ts"
 import { STACKS, classifyStack, stackColor, isPhpEol, phpSortKey, type Stack } from "../../lib/stack.ts"
-import { Panel } from "../components.tsx"
+import { probeKindColor } from "../../lib/probe.ts"
+import { Panel, Spinner } from "../components.tsx"
 import { List, moveSelection } from "../List.tsx"
 import { StatusBar } from "../StatusBar.tsx"
 import { openUrl } from "../../lib/open.ts"
@@ -22,7 +23,8 @@ type Focus = "stacks" | "sites"
 
 export function Stacks({ rows }: { rows: number }) {
   const store = useStore()
-  const { sites, serverById, route, inputMode, overlayOpen } = store
+  const { sites, serverById, route, inputMode, overlayOpen, probes, probingIds, probeErrors, runProbe, isProbeStale } =
+    store
 
   const [stackIndex, setStackIndex] = useState(0)
   const [siteIndex, setSiteIndex] = useState(0)
@@ -94,6 +96,15 @@ export function Stacks({ rows }: { rows: number }) {
           setTimeout(() => setFlash(null), 1500)
         }
         return
+      case "d":
+        // Detect: SSH-probe the selected site's actual stack (Tier 2).
+        if (focus === "sites" && stackSites[siteIndex]) {
+          const s = stackSites[siteIndex]
+          runProbe(s)
+          setFlash(`Probing ${s.domain}…`)
+          setTimeout(() => setFlash(null), 1500)
+        }
+        return
     }
   })
 
@@ -109,8 +120,15 @@ export function Stacks({ rows }: { rows: number }) {
       : [
           { key: "↑↓/jk", label: "select site" },
           { key: "←/esc", label: "back" },
+          { key: "d", label: "detect stack" },
           { key: "o", label: "open" },
         ]
+
+  // Prefer a transient flash; otherwise surface the selected site's probe error.
+  const selectedSite = focus === "sites" ? stackSites[siteIndex] : undefined
+  const selectedError = selectedSite ? probeErrors.get(selectedSite.id) : undefined
+  const statusMessage = flash ?? (selectedError ? `⚠ ${selectedError}` : undefined)
+  const statusColorMsg = flash ? theme.brand : theme.bad
 
   return (
     <box style={{ flexGrow: 1, flexDirection: "column" }}>
@@ -150,28 +168,52 @@ export function Stacks({ rows }: { rows: number }) {
             focused={focus === "sites"}
             keyFor={(s) => s.id}
             emptyText="No sites in this stack"
-            renderRow={(s, selected) => (
-              <>
-                <text content={statusDot(s.status) + " "} fg={statusColor(s.status)} style={{ flexShrink: 0 }} />
-                <text
-                  content={truncate(s.domain, 48)}
-                  fg={selected ? theme.text : theme.textDim}
-                  wrapMode="none"
-                  style={{ flexGrow: 1, flexShrink: 1 }}
-                />
-                <text
-                  content={truncate(serverById(s.server_id)?.name ?? "", 18)}
-                  fg={theme.textFaint}
-                  wrapMode="none"
-                  style={{ flexShrink: 0, marginLeft: 1 }}
-                />
-                <text
-                  content={" " + (s.php_version ?? "—")}
-                  fg={isPhpEol(s.php_version) ? theme.bad : theme.textFaint}
-                  style={{ flexShrink: 0 }}
-                />
-              </>
-            )}
+            renderRow={(s, selected) => {
+              const cached = probes.get(s.id)
+              const probing = probingIds.has(s.id)
+              const errored = probeErrors.has(s.id)
+              // On the focused selection (bright-green bg) faint text is illegible,
+              // so brighten the secondary cells when the row is selected.
+              const faint = selected ? theme.text : theme.textFaint
+              return (
+                <>
+                  <text content={statusDot(s.status) + " "} fg={statusColor(s.status)} style={{ flexShrink: 0 }} />
+                  <text
+                    content={truncate(s.domain, 40)}
+                    fg={selected ? theme.text : theme.textDim}
+                    wrapMode="none"
+                    style={{ flexGrow: 1, flexShrink: 1 }}
+                  />
+                  {/* Tier-2 detected stack (or status of the probe). */}
+                  <box style={{ flexShrink: 0, flexDirection: "row", marginLeft: 1 }}>
+                    {probing ? (
+                      <Spinner color={selected ? theme.text : theme.brand} />
+                    ) : cached ? (
+                      <text
+                        content={truncate(cached.result.label, 20) + (isProbeStale(s) ? "*" : "")}
+                        fg={probeKindColor(cached.result.kind, selected)}
+                        wrapMode="none"
+                      />
+                    ) : errored ? (
+                      <text content="probe failed" fg={selected ? theme.text : theme.bad} wrapMode="none" />
+                    ) : (
+                      <text content="· press d" fg={faint} wrapMode="none" />
+                    )}
+                  </box>
+                  <text
+                    content={truncate(serverById(s.server_id)?.name ?? "", 16)}
+                    fg={faint}
+                    wrapMode="none"
+                    style={{ flexShrink: 0, marginLeft: 1 }}
+                  />
+                  <text
+                    content={" " + (s.php_version ?? "—")}
+                    fg={isPhpEol(s.php_version) ? theme.bad : faint}
+                    style={{ flexShrink: 0 }}
+                  />
+                </>
+              )
+            }}
           />
         </Panel>
 
@@ -192,7 +234,7 @@ export function Stacks({ rows }: { rows: number }) {
           </box>
         </Panel>
       </box>
-      <StatusBar hints={hints} message={flash ?? undefined} messageColor={theme.brand} />
+      <StatusBar hints={hints} message={statusMessage} messageColor={statusColorMsg} />
     </box>
   )
 }

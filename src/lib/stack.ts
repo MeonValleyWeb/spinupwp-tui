@@ -28,14 +28,16 @@ export function classifyStack(site: Site): Stack {
   return "Standard WP"
 }
 
-export function stackColor(stack: Stack): string {
+// `onSelection` brightens the colors that read poorly on the focused
+// (bright-green) selection background (green-on-green Bedrock, the faint grey).
+export function stackColor(stack: Stack, onSelection = false): string {
   switch (stack) {
     case "Standard WP":
       return theme.accent // blue
     case "Bedrock":
-      return theme.good // green
+      return onSelection ? theme.text : theme.good // green
     case "Non-WP":
-      return theme.textDim // gray
+      return onSelection ? theme.text : theme.textDim // gray
   }
 }
 

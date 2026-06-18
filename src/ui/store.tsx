@@ -9,6 +9,8 @@ import { createContext, useContext, useCallback, useEffect, useRef, useState, ty
 import { SpinupWPClient, ApiError } from "../api/client.ts"
 import type { Server, Site, Event } from "../api/types.ts"
 import { loadConfig } from "../config.ts"
+import { probeSite } from "../lib/probe.ts"
+import { StackCache, siteSignature, type CachedProbe } from "../lib/stackCache.ts"
 
 export type Route = "dashboard" | "servers" | "stacks" | "search" | "events"
 
@@ -41,6 +43,14 @@ interface StoreValue extends DataState {
   sshUser: string | null
   sitesForServer: (serverId: number) => Site[]
   serverById: (id: number | null | undefined) => Server | undefined
+  // Tier-2 stack probes (on-demand SSH), hydrated from disk at startup.
+  probes: Map<number, CachedProbe> // by site id
+  probingIds: Set<number> // sites with an in-flight probe
+  probeErrors: Map<number, string> // last error per site id
+  // Probe a single site over SSH (fire-and-forget); write-through to the cache.
+  runProbe: (site: Site) => void
+  // Whether a cached probe for this site is stale (site shape changed since).
+  isProbeStale: (site: Site) => boolean
 }
 
 const StoreContext = createContext<StoreValue | null>(null)
@@ -70,6 +80,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [inputMode, setInputMode] = useState(false)
   const [overlayOpen, setOverlayOpen] = useState(false)
   const [healthServer, setHealthServer] = useState<Server | null>(null)
+
+  // Tier-2 stack-probe cache: hydrate from disk once (read-only at startup; no
+  // SSH). Probes run lazily on demand and write through to disk.
+  const cacheRef = useRef<StackCache | null>(null)
+  if (!cacheRef.current) {
+    cacheRef.current = new StackCache()
+    cacheRef.current.load()
+  }
+  const [probes, setProbes] = useState<Map<number, CachedProbe>>(() => cacheRef.current!.snapshot())
+  const [probingIds, setProbingIds] = useState<Set<number>>(new Set())
+  const [probeErrors, setProbeErrors] = useState<Map<number, string>>(new Map())
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -108,6 +129,38 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [servers],
   )
 
+  const runProbe = useCallback(
+    (site: Site) => {
+      const cache = cacheRef.current!
+      if (probingIds.has(site.id)) return // already in flight
+      setProbingIds((prev) => new Set(prev).add(site.id))
+      setProbeErrors((prev) => {
+        if (!prev.has(site.id)) return prev
+        const next = new Map(prev)
+        next.delete(site.id)
+        return next
+      })
+      void (async () => {
+        const server = servers.find((s) => s.id === site.server_id)
+        const outcome = await probeSite(site, server, cfgRef.current.sshUser)
+        if (outcome.ok) {
+          await cache.set(site.id, outcome.result, siteSignature(site))
+          setProbes(cache.snapshot())
+        } else {
+          setProbeErrors((prev) => new Map(prev).set(site.id, outcome.error))
+        }
+        setProbingIds((prev) => {
+          const next = new Set(prev)
+          next.delete(site.id)
+          return next
+        })
+      })()
+    },
+    [servers, probingIds],
+  )
+
+  const isProbeStale = useCallback((site: Site) => cacheRef.current!.isStale(site.id, siteSignature(site)), [])
+
   const value: StoreValue = {
     servers,
     sites,
@@ -129,6 +182,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     sshUser: cfgRef.current.sshUser,
     sitesForServer,
     serverById,
+    probes,
+    probingIds,
+    probeErrors,
+    runProbe,
+    isProbeStale,
   }
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>

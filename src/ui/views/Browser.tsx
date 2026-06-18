@@ -149,9 +149,9 @@ export function Browser({ rows }: { rows: number }) {
                 <>
                   <text content={statusDot(s.status) + " "} fg={statusColor(s.status)} style={{ flexShrink: 0 }} />
                   <text content={truncate(s.domain, 40)} fg={selected ? theme.text : theme.textDim} wrapMode="none" style={{ flexGrow: 1, flexShrink: 1 }} />
-                  <text content={stackTag(stack) + " "} fg={stackColor(stack)} style={{ flexShrink: 0 }} />
+                  <text content={stackTag(stack) + " "} fg={stackColor(stack, selected)} style={{ flexShrink: 0 }} />
                   {updates > 0 && <text content={`↑${updates} `} fg={theme.warn} style={{ flexShrink: 0 }} />}
-                  <text content={s.php_version ?? ""} fg={theme.textFaint} style={{ flexShrink: 0 }} />
+                  <text content={s.php_version ?? ""} fg={selected ? theme.text : theme.textFaint} style={{ flexShrink: 0 }} />
                 </>
               )
             }}

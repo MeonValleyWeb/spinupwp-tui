@@ -148,7 +148,7 @@ export function Search({ rows }: { rows: number }) {
                   <text content="SITE" fg={theme.accent} style={{ flexShrink: 0 }} />
                   <text content={" " + statusDot(r.site.status) + " "} fg={statusColor(r.site.status)} style={{ flexShrink: 0 }} />
                   <text content={truncate(r.site.domain, 44)} fg={sel ? theme.text : theme.textDim} wrapMode="none" style={{ flexGrow: 1, flexShrink: 1, marginRight: 1 }} />
-                  <text content={stackTag(classifyStack(r.site))} fg={stackColor(classifyStack(r.site))} style={{ flexShrink: 0 }} />
+                  <text content={stackTag(classifyStack(r.site))} fg={stackColor(classifyStack(r.site), sel)} style={{ flexShrink: 0 }} />
                 </>
               )
             }}
