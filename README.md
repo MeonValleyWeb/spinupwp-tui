@@ -13,7 +13,7 @@
 Once you're in, the dashboard looks like this:
 
 ```
- ◆ SpinupWP   1 Dashboard   2 Servers   3 Search   4 Events    20 servers · 171 sites
+ ◆ SpinupWP   1 Dashboard   2 Servers   3 Stacks   4 Search   5 Events   20 servers · 171 sites
 
  ┌──────────────┐ ┌───────────────┐ ┌───────────────────┐ ┌──────────────────────┐
  │ Servers      │ │ Sites         │ │ Fleet Disk        │ │ WP Updates           │
@@ -34,6 +34,11 @@ Once you're in, the dashboard looks like this:
 - **Server & site browser** — a three-pane navigator. Pick a server, see its
   sites, drill into full details (PHP version, HTTPS, page cache, backups, Git
   deployment, WP updates, and more).
+- **Stack detection & fleet composition** — the Stacks tab classifies every site
+  as Standard WP, Bedrock, or Non-WP, with a fleet-wide PHP version breakdown
+  (EOL versions flagged). Press `d` to SSH-probe a site's actual stack — naming
+  WHMCS, Laravel, Static HTML, and WordPress versions the API can't tell you —
+  or `D` to probe a whole stack at once. (See "Stack detection" below.)
 - **Global search** — fuzzy search across every server and site at once by name,
   domain, or IP. Jump straight to anything.
 - **Events feed** — recent provisioning and operation activity, with per-event
@@ -119,7 +124,7 @@ screen) and relaunch, or set the environment variable.
 
 | Key | Action |
 | --- | --- |
-| `1` `2` `3` `4` | Switch tabs: Dashboard · Servers · Search · Events |
+| `1`…`5` | Switch tabs: Dashboard · Servers · Stacks · Search · Events |
 | `↑`/`↓` or `j`/`k` | Move selection |
 | `Enter` / `→` | Drill in (server → its sites) |
 | `←` / `Esc` | Go back / collapse |
@@ -127,6 +132,8 @@ screen) and relaunch, or set the environment variable.
 | `g` / `G` | Jump to top / bottom |
 | `o` | Open the selected site in your browser |
 | `h` | Live server health (CPU/mem/disk over SSH) |
+| `d` | Detect a site's stack via SSH (Servers / Stacks tabs) |
+| `D` | Detect every site in the selected stack (Stacks tab) |
 | `/` | Jump to global search |
 | `r` | Refresh data from the API |
 | `?` | Toggle the help overlay |
@@ -150,6 +157,30 @@ agent** — the same way you'd `ssh in` and run `htop`. It runs a single batched
 
 Nothing is ever written to the server.
 
+## Stack detection
+
+The **Stacks** tab (`3`) breaks your fleet into buckets and helps you see what's
+actually running where. It works in two tiers:
+
+- **Tier 1 — instant, no SSH.** Every site is classified from data the API
+  already returns: **Non-WP**, **Bedrock** (WordPress with a `/web/` webroot), or
+  **Standard WP**. The left pane shows counts and bars; the right pane shows the
+  fleet-wide **PHP version distribution** with end-of-life versions flagged.
+
+- **Tier 2 — on-demand SSH probe.** Press `d` on a site (in the Stacks or
+  Servers tab) to inspect its filesystem **read-only** and identify it precisely:
+  **WordPress** (with version), **Bedrock**, **WHMCS**, **Laravel**, or
+  **Static HTML**. Press `D` to probe an entire stack in list order (bounded SSH
+  concurrency). A conclusive probe **overrides** the Tier-1 guess — so a site the
+  API mislabels (e.g. WordPress installed outside SpinupWP's installer reports
+  `is_wordpress=false`) moves into its true bucket. The Non-WP bucket expands
+  into named sub-rows (WHMCS / Laravel / Static HTML / Unknown / unprobed).
+
+Probes reuse the same SSH access as the health view (`site_user@ip`, your local
+keys, `BatchMode`) and are **read-only**. Results are cached to
+`~/.config/spinupwp-tui/stack-cache.json`, hydrated at startup, so detections
+survive restarts without re-running SSH.
+
 ## Development
 
 ```sh
@@ -166,14 +197,17 @@ src/
   api/
     client.ts        typed fetch client (pagination, errors, validation)
     types.ts         Server / Site / Event types
-  lib/               formatting, theme, open-in-browser helpers
+  lib/               formatting, theme, open-in-browser, SSH helpers
+    stack.ts         Tier-1 stack classification + effective (probe-aware) bucket
+    probe.ts         Tier-2 SSH stack probe (WHMCS / Bedrock / Laravel / WP / …)
+    stackCache.ts    disk-backed probe cache (hydrate on start, write-through)
   ui/
     App.tsx          shell: splash gating, key routing, layout
     store.tsx        React-context data store
     Splash / Onboarding / Header / StatusBar / Help
     List.tsx         generic windowed keyboard list
     Details.tsx      shared server/site detail panels
-    views/           Dashboard, Browser, Search, Events
+    views/           Dashboard, Browser, Stacks, Search, Events
 ```
 
 ## License
