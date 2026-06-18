@@ -14,7 +14,8 @@ import { useEffect, useMemo, useState } from "react"
 import { useKeyboard } from "@opentui/react"
 import { theme, statusColor, statusDot } from "../../lib/theme.ts"
 import { bar, truncate } from "../../lib/format.ts"
-import { STACKS, effectiveStack, stackColor, isPhpEol, phpSortKey, type Stack } from "../../lib/stack.ts"
+import { STACKS, effectiveStack, stackColor, type Stack } from "../../lib/stack.ts"
+import { phpSortKey } from "../../lib/phpEol.ts"
 import { probeKindColor, type ProbeKind } from "../../lib/probe.ts"
 import { Panel, Spinner } from "../components.tsx"
 import { List, moveSelection } from "../List.tsx"
@@ -46,7 +47,7 @@ const NONWP_SUBS: { kind: ProbeKind | null; label: string }[] = [
 
 export function Stacks({ rows }: { rows: number }) {
   const store = useStore()
-  const { sites, serverById, route, inputMode, overlayOpen, probes, probingIds, probeErrors, runProbe, runProbeMany, isProbeStale } =
+  const { sites, serverById, route, inputMode, overlayOpen, probes, probingIds, probeErrors, runProbe, runProbeMany, isProbeStale, isPhpEol } =
     store
 
   const [groupIndex, setGroupIndex] = useState(0)

@@ -74,20 +74,5 @@ export function stackTag(stack: Stack): string {
   }
 }
 
-// PHP end-of-life check for the fleet PHP-version distribution. As of mid-2026,
-// 8.0 and 8.1 are past end-of-life; 8.2+ still receive (security) support.
-export function isPhpEol(version: string | null | undefined): boolean {
-  if (!version) return false
-  const [maj, min] = version.split(".").map((n) => Number.parseInt(n, 10))
-  if (!Number.isFinite(maj)) return false
-  if (maj < 8) return true
-  return maj === 8 && (min ?? 0) <= 1
-}
-
-// Numeric sort key for "8.10" > "8.2" correctness (major*100 + minor).
-export function phpSortKey(version: string | null | undefined): number {
-  if (!version) return -1
-  const [maj, min] = version.split(".").map((n) => Number.parseInt(n, 10))
-  if (!Number.isFinite(maj)) return -1
-  return maj * 100 + (Number.isFinite(min) ? min : 0)
-}
+// PHP version helpers (EOL check, sort key) live in ./phpEol.ts — EOL is
+// computed from real dates vs today, refreshed from endoflife.date.

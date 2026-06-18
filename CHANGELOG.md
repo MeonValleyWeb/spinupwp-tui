@@ -11,6 +11,14 @@ versions; such changes are called out here.
 
 ## [Unreleased]
 
+### Changed
+- **PHP EOL flagging is now date-driven, not a hard-coded version cutoff.** A
+  version is flagged once its real end-of-life date is past the current date, so
+  it self-corrects as the calendar advances (e.g. 8.2 flips on 2027-01-01 with
+  no code change). Dates come from an embedded php.net table (offline default)
+  refreshed from [endoflife.date](https://endoflife.date) and cached to
+  `~/.config/spinupwp-tui/php-eol.json`; unknown versions are never guessed.
+
 ## [0.2.0] - 2026-06-18
 
 ### Added

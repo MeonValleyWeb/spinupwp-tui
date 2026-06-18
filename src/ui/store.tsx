@@ -11,6 +11,7 @@ import type { Server, Site, Event } from "../api/types.ts"
 import { loadConfig } from "../config.ts"
 import { probeSite } from "../lib/probe.ts"
 import { StackCache, siteSignature, type CachedProbe } from "../lib/stackCache.ts"
+import { resolvePhpEolDates, refreshPhpEolDates, isPhpEol as isPhpEolWith, type PhpEolDates } from "../lib/phpEol.ts"
 
 export type Route = "dashboard" | "servers" | "stacks" | "search" | "events"
 
@@ -53,6 +54,8 @@ interface StoreValue extends DataState {
   runProbeMany: (sites: Site[]) => void
   // Whether a cached probe for this site is stale (site shape changed since).
   isProbeStale: (site: Site) => boolean
+  // Whether a PHP version is past end-of-life (real dates vs today, refreshed).
+  isPhpEol: (version: string | null | undefined) => boolean
 }
 
 const StoreContext = createContext<StoreValue | null>(null)
@@ -93,6 +96,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [probes, setProbes] = useState<Map<number, CachedProbe>>(() => cacheRef.current!.snapshot())
   const [probingIds, setProbingIds] = useState<Set<number>>(new Set())
   const [probeErrors, setProbeErrors] = useState<Map<number, string>>(new Map())
+
+  // PHP EOL dates: embedded defaults overlaid with the last cached fetch; a
+  // background refresh (endoflife.date) updates them when the cache is stale.
+  const [phpEolDates, setPhpEolDates] = useState<PhpEolDates>(() => resolvePhpEolDates())
+  useEffect(() => {
+    void refreshPhpEolDates().then((updated) => {
+      if (updated) setPhpEolDates(updated)
+    })
+  }, [])
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -189,6 +201,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const isProbeStale = useCallback((site: Site) => cacheRef.current!.isStale(site.id, siteSignature(site)), [])
 
+  const isPhpEol = useCallback((version: string | null | undefined) => isPhpEolWith(version, phpEolDates), [phpEolDates])
+
   const value: StoreValue = {
     servers,
     sites,
@@ -216,6 +230,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     runProbe,
     runProbeMany,
     isProbeStale,
+    isPhpEol,
   }
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>
