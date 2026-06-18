@@ -21,6 +21,7 @@ import { Panel, Spinner } from "../components.tsx"
 import { List, moveSelection } from "../List.tsx"
 import { StatusBar } from "../StatusBar.tsx"
 import { openUrl } from "../../lib/open.ts"
+import { siteWebUrl } from "../../lib/spinupweb.ts"
 import { useStore } from "../store.tsx"
 import type { Site } from "../../api/types.ts"
 
@@ -47,7 +48,7 @@ const NONWP_SUBS: { kind: ProbeKind | null; label: string }[] = [
 
 export function Stacks({ rows }: { rows: number }) {
   const store = useStore()
-  const { sites, serverById, route, inputMode, overlayOpen, probes, probingIds, probeErrors, runProbe, runProbeMany, isProbeStale, isPhpEol } =
+  const { sites, serverById, route, inputMode, overlayOpen, probes, probingIds, probeErrors, runProbe, runProbeMany, isProbeStale, isPhpEol, accountSlug } =
     store
 
   const [groupIndex, setGroupIndex] = useState(0)
@@ -149,6 +150,13 @@ export function Stacks({ rows }: { rows: number }) {
           flashMsg(`Opening ${s.domain}…`)
         }
         return
+      case "w":
+        // Open the selected site in the SpinupWP web app.
+        if (focus === "sites" && groupSites[siteIndex]) {
+          openUrl(siteWebUrl(groupSites[siteIndex].id, accountSlug))
+          flashMsg(accountSlug ? "Opening in SpinupWP…" : "Set accountSlug for deep links — opening dashboard")
+        }
+        return
       case "d":
         // Single probe of the selected site (sites pane only).
         if (focus === "sites" && groupSites[siteIndex]) {
@@ -185,6 +193,7 @@ export function Stacks({ rows }: { rows: number }) {
           { key: "d", label: "detect" },
           { key: "D", label: "detect all" },
           { key: "o", label: "open" },
+          { key: "w", label: "SpinupWP" },
         ]
 
   // Status priority: transient flash > batch progress > selected site's error.
