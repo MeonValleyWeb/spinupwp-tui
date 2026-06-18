@@ -11,6 +11,24 @@ versions; such changes are called out here.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-18
+
+### Added
+- **Server actions: reboot + service restarts.** Press `a` on a server (Servers
+  tab or a Search result) to reboot it (`POST /servers/{id}/reboot`) or restart a
+  service — Nginx / PHP-FPM / MySQL / Redis (`POST /servers/{id}/services/{svc}/restart`).
+  Pick → confirm → the event is tracked to completion in the store, so closing the
+  overlay leaves it running and the server's row keeps a spinner (same model as PHP
+  upgrades). Reboot's confirmation calls out whole-server downtime for all sites on
+  it; a service restart is a brief blip. Needs a Read/Write token.
+- **Reboot visibility + "why".** Servers needing a reboot show a `↻rbt` badge in the
+  Servers list (the Dashboard already listed them). Because the API only exposes a
+  `reboot_required` boolean with no reason, the actions overlay reads Ubuntu's
+  `/var/run/reboot-required` + `.pkgs` over SSH (read-only, reusing the health
+  connection) and shows the pending packages — typically a kernel/security update —
+  labeled as OS-level context, not SpinupWP's internal logic. ServerDetail's
+  "Reboot" field shows the same summary once probed.
+
 ## [0.3.0] - 2026-06-18
 
 ### Added
@@ -107,7 +125,8 @@ Initial tagged release.
 ### Notes
 - Read-only release: works with a SpinupWP **Read Only** API token.
 
-[Unreleased]: https://github.com/mwender/spinupwp-tui/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/mwender/spinupwp-tui/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/mwender/spinupwp-tui/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/mwender/spinupwp-tui/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/mwender/spinupwp-tui/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/mwender/spinupwp-tui/releases/tag/v0.1.0
