@@ -6,7 +6,7 @@ const SECTIONS: { title: string; keys: [string, string][] }[] = [
   {
     title: "Global",
     keys: [
-      ["1 / 2 / 3 / 4", "Switch tabs: Dashboard · Servers · Search · Events"],
+      ["1 … 5", "Switch tabs: Dashboard · Servers · Stacks · Search · Events"],
       ["r", "Refresh data from the API"],
       ["/", "Jump to global search"],
       ["?", "Toggle this help"],

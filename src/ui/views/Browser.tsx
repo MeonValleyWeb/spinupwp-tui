@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useKeyboard } from "@opentui/react"
 import { theme, statusColor, statusDot } from "../../lib/theme.ts"
+import { classifyStack, stackColor, stackTag } from "../../lib/stack.ts"
 import { truncate } from "../../lib/format.ts"
 import { Panel } from "../components.tsx"
 import { List, moveSelection } from "../List.tsx"
@@ -143,11 +144,12 @@ export function Browser({ rows }: { rows: number }) {
             emptyText="No sites on this server"
             renderRow={(s, selected) => {
               const updates = (s.wp_plugin_updates || 0) + (s.wp_theme_updates || 0) + (s.wp_core_update ? 1 : 0)
+              const stack = classifyStack(s)
               return (
                 <>
                   <text content={statusDot(s.status) + " "} fg={statusColor(s.status)} style={{ flexShrink: 0 }} />
                   <text content={truncate(s.domain, 40)} fg={selected ? theme.text : theme.textDim} wrapMode="none" style={{ flexGrow: 1, flexShrink: 1 }} />
-                  {s.is_wordpress && <text content="wp " fg={theme.brandDim} style={{ flexShrink: 0 }} />}
+                  <text content={stackTag(stack) + " "} fg={stackColor(stack)} style={{ flexShrink: 0 }} />
                   {updates > 0 && <text content={`↑${updates} `} fg={theme.warn} style={{ flexShrink: 0 }} />}
                   <text content={s.php_version ?? ""} fg={theme.textFaint} style={{ flexShrink: 0 }} />
                 </>

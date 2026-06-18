@@ -3,6 +3,7 @@
 import { theme, statusColor, diskColor } from "../lib/theme.ts"
 import { formatBytes, diskUsedPct, bar, formatDate, timeAgo, truncate } from "../lib/format.ts"
 import { Field, StatusBadge } from "./components.tsx"
+import { classifyStack, stackColor } from "../lib/stack.ts"
 import type { Server, Site } from "../api/types.ts"
 
 export function ServerDetail({ server, siteCount }: { server: Server; siteCount: number }) {
@@ -57,6 +58,7 @@ export function ServerDetail({ server, siteCount }: { server: Server; siteCount:
 
 export function SiteDetail({ site, serverName }: { site: Site; serverName: string }) {
   const updates = (site.wp_plugin_updates || 0) + (site.wp_theme_updates || 0) + (site.wp_core_update ? 1 : 0)
+  const stack = classifyStack(site)
   return (
     <box style={{ flexDirection: "column" }}>
       <box style={{ flexDirection: "row" }}>
@@ -68,6 +70,7 @@ export function SiteDetail({ site, serverName }: { site: Site; serverName: strin
       <box style={{ height: 1 }} />
 
       <Field label="Server" value={truncate(serverName, 30)} />
+      <Field label="Stack" value={stack} valueColor={stackColor(stack)} />
       <Field label="Type" value={site.is_wordpress ? "WordPress" : "Generic"} valueColor={site.is_wordpress ? theme.brand : theme.textDim} />
       <Field label="PHP" value={site.php_version ?? "—"} />
       <Field label="User" value={site.site_user ?? "—"} />

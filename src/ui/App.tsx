@@ -9,6 +9,7 @@ import { Header } from "./Header.tsx"
 import { HelpOverlay } from "./Help.tsx"
 import { Dashboard } from "./views/Dashboard.tsx"
 import { Browser } from "./views/Browser.tsx"
+import { Stacks } from "./views/Stacks.tsx"
 import { Search } from "./views/Search.tsx"
 import { Events } from "./views/Events.tsx"
 import { Health } from "./views/Health.tsx"
@@ -66,8 +67,10 @@ export function App() {
       case "2":
         return store.setRoute("servers")
       case "3":
-        return store.setRoute("search")
+        return store.setRoute("stacks")
       case "4":
+        return store.setRoute("search")
+      case "5":
         return store.setRoute("events")
       case "r":
         return void store.refresh()
@@ -103,6 +106,7 @@ export function App() {
       <box style={{ flexGrow: 1, flexDirection: "column" }}>
         {store.route === "dashboard" && <Dashboard rows={contentRows} />}
         {store.route === "servers" && <Browser rows={contentRows} />}
+        {store.route === "stacks" && <Stacks rows={contentRows} />}
         {store.route === "search" && <Search rows={contentRows} />}
         {store.route === "events" && <Events rows={contentRows} />}
       </box>

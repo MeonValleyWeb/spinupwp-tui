@@ -10,7 +10,7 @@ import { SpinupWPClient, ApiError } from "../api/client.ts"
 import type { Server, Site, Event } from "../api/types.ts"
 import { loadConfig } from "../config.ts"
 
-export type Route = "dashboard" | "servers" | "search" | "events"
+export type Route = "dashboard" | "servers" | "stacks" | "search" | "events"
 
 export interface DataState {
   servers: Server[]

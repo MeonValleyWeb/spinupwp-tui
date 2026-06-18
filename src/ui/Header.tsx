@@ -8,8 +8,9 @@ import { Spinner } from "./components.tsx"
 const TABS: { route: Route; key: string; label: string }[] = [
   { route: "dashboard", key: "1", label: "Dashboard" },
   { route: "servers", key: "2", label: "Servers" },
-  { route: "search", key: "3", label: "Search" },
-  { route: "events", key: "4", label: "Events" },
+  { route: "stacks", key: "3", label: "Stacks" },
+  { route: "search", key: "4", label: "Search" },
+  { route: "events", key: "5", label: "Events" },
 ]
 
 export function Header() {

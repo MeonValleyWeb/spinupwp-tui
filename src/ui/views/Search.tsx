@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useKeyboard } from "@opentui/react"
 import { theme, statusColor, statusDot } from "../../lib/theme.ts"
+import { classifyStack, stackColor, stackTag } from "../../lib/stack.ts"
 import { truncate } from "../../lib/format.ts"
 import { Panel } from "../components.tsx"
 import { List, moveSelection } from "../List.tsx"
@@ -147,7 +148,7 @@ export function Search({ rows }: { rows: number }) {
                   <text content="SITE" fg={theme.accent} style={{ flexShrink: 0 }} />
                   <text content={" " + statusDot(r.site.status) + " "} fg={statusColor(r.site.status)} style={{ flexShrink: 0 }} />
                   <text content={truncate(r.site.domain, 44)} fg={sel ? theme.text : theme.textDim} wrapMode="none" style={{ flexGrow: 1, flexShrink: 1, marginRight: 1 }} />
-                  {r.site.is_wordpress && <text content="wp" fg={theme.brandDim} style={{ flexShrink: 0 }} />}
+                  <text content={stackTag(classifyStack(r.site))} fg={stackColor(classifyStack(r.site))} style={{ flexShrink: 0 }} />
                 </>
               )
             }}

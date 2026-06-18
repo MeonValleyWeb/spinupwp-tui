@@ -11,6 +11,18 @@ versions; such changes are called out here.
 
 ## [Unreleased]
 
+### Added
+- **Site stack detection + Stacks tab (Tier 1).** Classifies every site as
+  Standard WP, Bedrock, or Non-WP from data already fetched (no SSH): non-WP →
+  Non-WP, WP with a `/web/` webroot → Bedrock, any other WP → Standard WP. Adds
+  a color-coded stack tag to the Browser and Search site lists, a "Stack" field
+  in the site detail panel, and a new **Stacks** tab (key `3`) showing fleet
+  composition (counts + bars), drill-down into the sites of a selected stack,
+  and the fleet-wide PHP version distribution with end-of-life versions flagged.
+
+### Changed
+- Tab keys shifted to make room for Stacks: Search is now `4`, Events is `5`.
+
 ## [0.1.0] - 2026-06-18
 
 Initial tagged release.
