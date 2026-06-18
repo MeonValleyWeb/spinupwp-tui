@@ -11,17 +11,30 @@ versions; such changes are called out here.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-18
+
 ### Added
+- **Upgrade a site's PHP version — the first write action.** Press `u` on a site
+  (Servers / Stacks / Search) to pick a PHP version and apply it
+  (`PUT /sites/{id}/php`); the resulting upgrade event is polled to completion.
+  The picker is built dynamically from the (network-refreshed)
+  [endoflife.date](https://endoflife.date) schedule — so new releases appear on
+  their own — with the current version marked and EOL versions flagged; it is
+  **not** filtered to versions already installed, since SpinupWP installs one on
+  demand. Tracking lives in the app store, so closing the modal leaves the
+  upgrade running: the site's row shows a spinner and target version (`→8.3`)
+  until it settles (or flags `⬆!` on failure), and the detail panel mirrors the
+  in-progress state. A site whose server has a pending platform upgrade is
+  blocked with a pointer to the `w` web deep link.
+- **Search actions mode.** In the Search tab, press `Tab` (or `→`) to hand focus
+  from the search box to the selected result's action menu — `o` open, `w`
+  SpinupWP, `u` PHP upgrade, `h` health — and `←` / `Esc` to return to typing.
 - **Server upgrade visibility + SpinupWP deep links.** Servers with a pending
-  SpinupWP platform upgrade now show an `⬆upg` badge in the Servers list and a
+  SpinupWP platform upgrade show an `⬆upg` badge in the Servers list and a
   "SpinupWP upgrade" field in the detail panel. Press `w` to open the selected
   server (or site) directly in the SpinupWP web app — useful for actions the API
   can't perform, like running the upgrade. Requires `accountSlug` in config
   (`SPINUPWP_ACCOUNT_SLUG`); falls back to the dashboard root if unset.
-
-### Fixed
-- The `upgrade_required` server field was mislabeled "OS upgrade"; it's a
-  SpinupWP **platform** upgrade (not Ubuntu), now labeled accordingly.
 
 ### Changed
 - **PHP EOL flagging is now date-driven, not a hard-coded version cutoff.** A
@@ -30,6 +43,15 @@ versions; such changes are called out here.
   no code change). Dates come from an embedded php.net table (offline default)
   refreshed from [endoflife.date](https://endoflife.date) and cached to
   `~/.config/spinupwp-tui/php-eol.json`; unknown versions are never guessed.
+
+### Fixed
+- The `upgrade_required` server field was mislabeled "OS upgrade"; it's a
+  SpinupWP **platform** upgrade (not Ubuntu), now labeled accordingly.
+
+### Notes
+- The PHP upgrade is the first **write** feature and needs a SpinupWP
+  **Read/Write** token. With a Read Only token the action returns a clear "token
+  is read-only" message and nothing changes; the entire read path keeps working.
 
 ## [0.2.0] - 2026-06-18
 
@@ -85,6 +107,7 @@ Initial tagged release.
 ### Notes
 - Read-only release: works with a SpinupWP **Read Only** API token.
 
-[Unreleased]: https://github.com/mwender/spinupwp-tui/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/mwender/spinupwp-tui/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/mwender/spinupwp-tui/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/mwender/spinupwp-tui/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/mwender/spinupwp-tui/releases/tag/v0.1.0

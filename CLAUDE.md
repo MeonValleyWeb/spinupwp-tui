@@ -9,6 +9,15 @@ terminal app for the SpinupWP API.
 - `bun run typecheck` — `tsc --noEmit`. Keep this green.
 - Must run under **Bun**, not Node — OpenTUI loads native code via Bun's FFI.
 
+## Releasing
+
+Follow **RELEASING.md** for every release — it's the source of truth. In short:
+features go via branch → PR → squash-merge to `main`; docs/chore may commit
+directly to `main`. Cutting a release = bump `package.json` (SemVer), roll
+`CHANGELOG.md` (`[Unreleased]` → `[X.Y.Z]` + date + compare links), tag `vX.Y.Z`,
+and publish a GitHub release in the house style (`gh release view v0.2.0` for the
+template). Never put client domains in any public artifact; anonymize.
+
 ## OpenTUI gotchas learned the hard way
 
 - **Single-line text truncation needs `wrapMode="none"`.** OpenTUI text
