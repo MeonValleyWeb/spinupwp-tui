@@ -11,6 +11,18 @@ versions; such changes are called out here.
 
 ## [Unreleased]
 
+### Added
+- **Server upgrade visibility + SpinupWP deep links.** Servers with a pending
+  SpinupWP platform upgrade now show an `⬆upg` badge in the Servers list and a
+  "SpinupWP upgrade" field in the detail panel. Press `w` to open the selected
+  server (or site) directly in the SpinupWP web app — useful for actions the API
+  can't perform, like running the upgrade. Requires `accountSlug` in config
+  (`SPINUPWP_ACCOUNT_SLUG`); falls back to the dashboard root if unset.
+
+### Fixed
+- The `upgrade_required` server field was mislabeled "OS upgrade"; it's a
+  SpinupWP **platform** upgrade (not Ubuntu), now labeled accordingly.
+
 ### Changed
 - **PHP EOL flagging is now date-driven, not a hard-coded version cutoff.** A
   version is flagged once its real end-of-life date is past the current date, so

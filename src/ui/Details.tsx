@@ -49,8 +49,8 @@ export function ServerDetail({ server, siteCount }: { server: Server; siteCount:
         valueColor={server.reboot_required ? theme.warn : theme.good}
       />
       <Field
-        label="OS upgrade"
-        value={server.upgrade_required ? "available" : "up to date"}
+        label="SpinupWP upgrade"
+        value={server.upgrade_required ? "required — press w to open" : "up to date"}
         valueColor={server.upgrade_required ? theme.warn : theme.good}
       />
       <Field label="Created" value={formatDate(server.created_at)} />

@@ -60,7 +60,7 @@ export function Dashboard({ rows }: { rows: number }) {
     const items: { text: string; color: string }[] = []
     for (const s of servers) {
       if (s.reboot_required) items.push({ text: `${s.name} — reboot required`, color: theme.warn })
-      if (s.upgrade_required) items.push({ text: `${s.name} — OS upgrade available`, color: theme.warn })
+      if (s.upgrade_required) items.push({ text: `${s.name} — SpinupWP upgrade required`, color: theme.warn })
     }
     return items
   }, [servers])

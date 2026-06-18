@@ -120,6 +120,18 @@ The token is resolved in this order (first match wins):
 To reconfigure, delete the config file (the path is shown on the onboarding
 screen) and relaunch, or set the environment variable.
 
+### Optional settings
+
+Both can be set in `config.json` or via an environment variable:
+
+- **`accountSlug`** / `SPINUPWP_ACCOUNT_SLUG` — your SpinupWP account/team slug
+  (the first path segment in a SpinupWP URL, e.g. `wenmark-digital-solutions` in
+  `https://spinupwp.app/wenmark-digital-solutions/servers/35633`). The API
+  doesn't expose it, so set it to enable the `w` deep links into the web app.
+  Without it, `w` opens the SpinupWP dashboard root.
+- **`sshUser`** / `SPINUPWP_SSH_USER` — override the SSH user for the health view
+  and stack probes (see "Server health" below).
+
 ## Keybindings
 
 | Key | Action |
@@ -134,6 +146,7 @@ screen) and relaunch, or set the environment variable.
 | `h` | Live server health (CPU/mem/disk over SSH) |
 | `d` | Detect a site's stack via SSH (Servers / Stacks tabs) |
 | `D` | Detect every site in the selected stack (Stacks tab) |
+| `w` | Open the selected server/site in the SpinupWP web app |
 | `/` | Jump to global search |
 | `r` | Refresh data from the API |
 | `?` | Toggle the help overlay |

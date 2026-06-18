@@ -21,12 +21,17 @@ export interface AppConfig {
   // Optional override for the SSH user used by the server health view. When unset,
   // the health view derives the user from a site on the server (its `site_user`).
   sshUser: string | null
+  // SpinupWP account/team slug (e.g. "wenmark-digital-solutions"), used to build
+  // deep links into the SpinupWP web app. The API doesn't expose it, so it's
+  // configured. When unset, deep links fall back to the dashboard root.
+  accountSlug: string | null
 }
 
 export interface StoredConfig {
   token?: string
   baseUrl?: string
   sshUser?: string
+  accountSlug?: string
 }
 
 export function configDir(): string {
@@ -62,6 +67,7 @@ export function loadConfig(): AppConfig {
     baseUrl: (stored.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, ""),
     tokenSource,
     sshUser: process.env.SPINUPWP_SSH_USER?.trim() || stored.sshUser?.trim() || null,
+    accountSlug: process.env.SPINUPWP_ACCOUNT_SLUG?.trim() || stored.accountSlug?.trim() || null,
   }
 }
 

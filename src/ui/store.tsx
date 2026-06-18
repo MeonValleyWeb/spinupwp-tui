@@ -42,6 +42,8 @@ interface StoreValue extends DataState {
   setHealthServer: (s: Server | null) => void
   // Optional SSH user override for the health view (from env/config).
   sshUser: string | null
+  // SpinupWP account slug (from env/config) for building web deep links.
+  accountSlug: string | null
   sitesForServer: (serverId: number) => Site[]
   serverById: (id: number | null | undefined) => Server | undefined
   // Tier-2 stack probes (on-demand SSH), hydrated from disk at startup.
@@ -222,6 +224,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     healthServer,
     setHealthServer,
     sshUser: cfgRef.current.sshUser,
+    accountSlug: cfgRef.current.accountSlug,
     sitesForServer,
     serverById,
     probes,

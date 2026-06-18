@@ -25,6 +25,7 @@ const SECTIONS: { title: string; keys: [string, string][] }[] = [
       ["h", "Live server health (CPU/mem/disk over SSH)"],
       ["d", "Detect a site's stack via SSH (Servers / Stacks tabs)"],
       ["D", "Detect every site in the selected stack (Stacks tab)"],
+      ["w", "Open the selected server/site in the SpinupWP web app"],
       ["g / G", "Jump to top / bottom"],
     ],
   },

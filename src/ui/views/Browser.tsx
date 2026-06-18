@@ -15,13 +15,14 @@ import { List, moveSelection } from "../List.tsx"
 import { ServerDetail, SiteDetail } from "../Details.tsx"
 import { StatusBar } from "../StatusBar.tsx"
 import { openUrl } from "../../lib/open.ts"
+import { serverWebUrl, siteWebUrl } from "../../lib/spinupweb.ts"
 import { useStore } from "../store.tsx"
 
 type Focus = "servers" | "sites"
 
 export function Browser({ rows }: { rows: number }) {
   const store = useStore()
-  const { servers, sitesForServer, route, inputMode, overlayOpen, setHealthServer, runProbe } = store
+  const { servers, sitesForServer, route, inputMode, overlayOpen, setHealthServer, runProbe, accountSlug } = store
 
   const [serverIndex, setServerIndex] = useState(0)
   const [siteIndex, setSiteIndex] = useState(0)
@@ -100,6 +101,18 @@ export function Browser({ rows }: { rows: number }) {
         // Open the live health view for the current server (works from either pane).
         if (server) setHealthServer(server)
         return
+      case "w":
+        // Open the focused server/site in the SpinupWP web app — useful for
+        // actions the API can't do (e.g. running a pending server upgrade).
+        if (focus === "sites" && sites[siteIndex]) {
+          openUrl(siteWebUrl(sites[siteIndex].id, accountSlug))
+          setFlash(accountSlug ? "Opening in SpinupWP…" : "Set accountSlug for deep links — opening dashboard")
+        } else if (server) {
+          openUrl(serverWebUrl(server.id, accountSlug))
+          setFlash(accountSlug ? "Opening in SpinupWP…" : "Set accountSlug for deep links — opening dashboard")
+        }
+        setTimeout(() => setFlash(null), 2000)
+        return
     }
   })
 
@@ -112,12 +125,14 @@ export function Browser({ rows }: { rows: number }) {
           { key: "↑↓/jk", label: "select" },
           { key: "→/⏎", label: "view sites" },
           { key: "h", label: "health" },
+          { key: "w", label: "open in SpinupWP" },
         ]
       : [
           { key: "↑↓/jk", label: "select site" },
           { key: "←/esc", label: "back" },
           { key: "d", label: "detect" },
           { key: "o", label: "open" },
+          { key: "w", label: "SpinupWP" },
           { key: "h", label: "health" },
         ]
 
@@ -138,8 +153,9 @@ export function Browser({ rows }: { rows: number }) {
               return (
                 <>
                   <text content={statusDot(s.connection_status) + " "} fg={statusColor(s.connection_status)} style={{ flexShrink: 0 }} />
-                  <text content={truncate(s.name, 24)} fg={selected ? theme.text : theme.textDim} wrapMode="none" style={{ flexGrow: 1, flexShrink: 1 }} />
-                  <text content={" " + count} fg={theme.textFaint} style={{ flexShrink: 0 }} />
+                  <text content={truncate(s.name, 22)} fg={selected ? theme.text : theme.textDim} wrapMode="none" style={{ flexGrow: 1, flexShrink: 1 }} />
+                  {s.upgrade_required && <text content="⬆upg " fg={selected ? theme.text : theme.warn} style={{ flexShrink: 0 }} />}
+                  <text content={" " + count} fg={selected ? theme.text : theme.textFaint} style={{ flexShrink: 0 }} />
                 </>
               )
             }}
