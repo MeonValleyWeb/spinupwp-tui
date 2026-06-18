@@ -21,8 +21,8 @@ Once you're in, the dashboard looks like this:
  │ 20 connected │ │ 139 WordPress │ │ 616.3 GB / 2.8 TB │ │ 217 plugin · 67 core │
  └──────────────┘ └───────────────┘ └───────────────────┘ └──────────────────────┘
  ┌─ Disk usage by server ───────────────┐ ┌─ Needs attention (27) ──────────────┐
- │ web3.caseantiques.com  ██████░░░ 60% │ │ • hetzner2.wenmarkdigital.com — …   │
- │ web2.pickupmydonation  ██████░░░ 57% │ │ • web3.rockytopinsider.com — OS …   │
+ │ web1.example.com       ██████░░░ 60% │ │ • db1.example.com — …               │
+ │ web2.example.com       ██████░░░ 57% │ │ • web3.example.org — OS …           │
  └──────────────────────────────────────┘ └─────────────────────────────────────┘
 ```
 
