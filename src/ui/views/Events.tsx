@@ -55,8 +55,8 @@ export function Events({ rows }: { rows: number }) {
             renderRow={(e, sel) => (
               <>
                 <text content={statusDot(e.status) + " "} fg={statusColor(e.status)} style={{ flexShrink: 0 }} />
-                <text content={truncate(e.name, 56)} fg={sel ? theme.text : theme.textDim} wrapMode="none" style={{ flexGrow: 1, flexShrink: 1, marginRight: 1 }} />
-                <text content={timeAgo(e.created_at)} fg={theme.textFaint} style={{ flexShrink: 0 }} />
+                <text content={truncate(e.name, 56)} fg={sel ? theme.text : theme.textDim} wrapMode="none" style={{ flexGrow: 1, flexShrink: 1 }} />
+                <text content={" " + timeAgo(e.created_at)} fg={theme.textFaint} style={{ flexShrink: 0 }} />
               </>
             )}
           />

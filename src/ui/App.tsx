@@ -83,13 +83,18 @@ export function App() {
     return <Splash status={status} />
   }
 
-  // Rows available to the content area: total minus the header row. Each view
-  // renders its own status bar, so it subtracts that itself.
-  const contentRows = Math.max(3, height - 1)
+  // Rows available to the content area: total minus the header row (and the
+  // error banner, when present). Each view renders its own status bar.
+  const contentRows = Math.max(3, height - 1 - (store.error ? 1 : 0))
 
   return (
     <box style={{ width: "100%", height: "100%", flexDirection: "column", backgroundColor: theme.bg }}>
       <Header />
+      {store.error && (
+        <box style={{ height: 1, backgroundColor: theme.bad, paddingLeft: 1, paddingRight: 1, flexDirection: "row" }}>
+          <text content={`⚠ ${store.error}  —  press r to retry`} fg={theme.bg} wrapMode="none" style={{ flexGrow: 1, flexShrink: 1 }} />
+        </box>
+      )}
       <box style={{ flexGrow: 1, flexDirection: "column" }}>
         {store.route === "dashboard" && <Dashboard rows={contentRows} />}
         {store.route === "servers" && <Browser rows={contentRows} />}

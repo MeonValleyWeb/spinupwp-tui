@@ -133,9 +133,9 @@ export function Dashboard({ rows }: { rows: number }) {
                 <text content="No recent events" fg={theme.textFaint} />
               ) : (
                 events.slice(0, Math.max(1, Math.floor(listRows / 2))).map((e) => (
-                  <box key={e.id} style={{ flexDirection: "row", height: 1, gap: 1 }}>
+                  <box key={e.id} style={{ flexDirection: "row", height: 1 }}>
                     <text content={truncate(e.name, 44)} fg={theme.text} wrapMode="none" style={{ flexGrow: 1, flexShrink: 1 }} />
-                    <text content={timeAgo(e.created_at)} fg={theme.textFaint} style={{ flexShrink: 0 }} />
+                    <text content={" " + timeAgo(e.created_at)} fg={theme.textFaint} style={{ flexShrink: 0 }} />
                   </box>
                 ))
               )}
