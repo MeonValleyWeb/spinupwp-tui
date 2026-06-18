@@ -1,0 +1,169 @@
+// Server & site browser: a three-pane master/detail navigator.
+//
+//   [ Servers ] → [ Sites on server ] → [ Details of focused item ]
+//
+// Tab / →  moves focus rightward, ← / Esc moves it back. ↑/↓ (or j/k) move the
+// selection in the focused pane. `o` opens the selected site in the browser.
+
+import { useEffect, useMemo, useState } from "react"
+import { useKeyboard } from "@opentui/react"
+import { theme, statusColor, statusDot } from "../../lib/theme.ts"
+import { truncate } from "../../lib/format.ts"
+import { Panel } from "../components.tsx"
+import { List, moveSelection } from "../List.tsx"
+import { ServerDetail, SiteDetail } from "../Details.tsx"
+import { StatusBar } from "../StatusBar.tsx"
+import { openUrl } from "../../lib/open.ts"
+import { useStore } from "../store.tsx"
+
+type Focus = "servers" | "sites"
+
+export function Browser({ rows }: { rows: number }) {
+  const store = useStore()
+  const { servers, sitesForServer, route, inputMode, overlayOpen } = store
+
+  const [serverIndex, setServerIndex] = useState(0)
+  const [siteIndex, setSiteIndex] = useState(0)
+  const [focus, setFocus] = useState<Focus>("servers")
+  const [flash, setFlash] = useState<string | null>(null)
+
+  // Servers sorted alphabetically for predictable browsing.
+  const sortedServers = useMemo(
+    () => [...servers].sort((a, b) => a.name.localeCompare(b.name)),
+    [servers],
+  )
+  const server = sortedServers[Math.min(serverIndex, sortedServers.length - 1)]
+  const sites = useMemo(
+    () => (server ? [...sitesForServer(server.id)].sort((a, b) => a.domain.localeCompare(b.domain)) : []),
+    [server, sitesForServer],
+  )
+
+  // Reset site selection whenever the active server changes.
+  useEffect(() => {
+    setSiteIndex(0)
+  }, [serverIndex])
+
+  const isActive = route === "servers" && !inputMode && !overlayOpen
+
+  useKeyboard((key) => {
+    if (!isActive) return
+    const name = key.name
+
+    const moveBy = (delta: number) => {
+      if (focus === "servers") setServerIndex((i) => moveSelection(i, delta, sortedServers.length))
+      else setSiteIndex((i) => moveSelection(i, delta, sites.length))
+    }
+
+    switch (name) {
+      case "up":
+      case "k":
+        return moveBy(-1)
+      case "down":
+      case "j":
+        return moveBy(1)
+      case "g":
+        return focus === "servers" ? setServerIndex(0) : setSiteIndex(0)
+      case "G":
+        return focus === "servers" ? setServerIndex(sortedServers.length - 1) : setSiteIndex(sites.length - 1)
+      case "right":
+      case "l":
+      case "return":
+      case "tab":
+        if (focus === "servers" && sites.length > 0) setFocus("sites")
+        return
+      case "left":
+      case "h":
+      case "escape":
+        if (focus === "sites") setFocus("servers")
+        return
+      case "o":
+        if (focus === "sites" && sites[siteIndex]) {
+          const s = sites[siteIndex]
+          openUrl((s.https?.enabled ? "https://" : "http://") + s.domain)
+          setFlash(`Opening ${s.domain}…`)
+          setTimeout(() => setFlash(null), 1500)
+        }
+        return
+    }
+  })
+
+  const listRows = Math.max(3, rows - 6)
+  const focusedSite = sites[Math.min(siteIndex, Math.max(0, sites.length - 1))]
+
+  const hints =
+    focus === "servers"
+      ? [
+          { key: "↑↓/jk", label: "select" },
+          { key: "→/⏎", label: "view sites" },
+          { key: "o", label: "open site" },
+        ]
+      : [
+          { key: "↑↓/jk", label: "select site" },
+          { key: "←/esc", label: "back" },
+          { key: "o", label: "open in browser" },
+        ]
+
+  return (
+    <box style={{ flexGrow: 1, flexDirection: "column" }}>
+      <box style={{ flexGrow: 1, flexDirection: "row", padding: 1, gap: 1 }}>
+        {/* Servers pane */}
+        <Panel title={` Servers (${sortedServers.length}) `} active={focus === "servers"} width={34}>
+          <List
+            items={sortedServers}
+            selectedIndex={serverIndex}
+            viewportRows={listRows}
+            focused={focus === "servers"}
+            keyFor={(s) => s.id}
+            emptyText="No servers"
+            renderRow={(s, selected) => {
+              const count = sitesForServer(s.id).length
+              return (
+                <>
+                  <text content={statusDot(s.connection_status) + " "} fg={statusColor(s.connection_status)} style={{ flexShrink: 0 }} />
+                  <text content={truncate(s.name, 24)} fg={selected ? theme.text : theme.textDim} wrapMode="none" style={{ flexGrow: 1, flexShrink: 1 }} />
+                  <text content={" " + count} fg={theme.textFaint} style={{ flexShrink: 0 }} />
+                </>
+              )
+            }}
+          />
+        </Panel>
+
+        {/* Sites pane */}
+        <Panel title={server ? ` Sites · ${truncate(server.name, 20)} (${sites.length}) ` : " Sites "} active={focus === "sites"} flexGrow={1}>
+          <List
+            items={sites}
+            selectedIndex={siteIndex}
+            viewportRows={listRows}
+            focused={focus === "sites"}
+            keyFor={(s) => s.id}
+            emptyText="No sites on this server"
+            renderRow={(s, selected) => {
+              const updates = (s.wp_plugin_updates || 0) + (s.wp_theme_updates || 0) + (s.wp_core_update ? 1 : 0)
+              return (
+                <>
+                  <text content={statusDot(s.status) + " "} fg={statusColor(s.status)} style={{ flexShrink: 0 }} />
+                  <text content={truncate(s.domain, 40)} fg={selected ? theme.text : theme.textDim} wrapMode="none" style={{ flexGrow: 1, flexShrink: 1 }} />
+                  {s.is_wordpress && <text content="wp " fg={theme.brandDim} style={{ flexShrink: 0 }} />}
+                  {updates > 0 && <text content={`↑${updates} `} fg={theme.warn} style={{ flexShrink: 0 }} />}
+                  <text content={s.php_version ?? ""} fg={theme.textFaint} style={{ flexShrink: 0 }} />
+                </>
+              )
+            }}
+          />
+        </Panel>
+
+        {/* Detail pane */}
+        <Panel title=" Details " width={44}>
+          {focus === "sites" && focusedSite ? (
+            <SiteDetail site={focusedSite} serverName={server?.name ?? "—"} />
+          ) : server ? (
+            <ServerDetail server={server} siteCount={sites.length} />
+          ) : (
+            <text content="No data" fg={theme.textFaint} />
+          )}
+        </Panel>
+      </box>
+      <StatusBar hints={hints} message={flash ?? undefined} messageColor={theme.brand} />
+    </box>
+  )
+}
