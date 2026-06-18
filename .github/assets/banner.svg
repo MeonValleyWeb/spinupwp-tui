@@ -11,7 +11,6 @@
     <clipPath id="round"><rect x="0.5" y="0.5" width="999" height="359" rx="14"/></clipPath>
   </defs>
 
-  <!-- window -->
   <rect x="0.5" y="0.5" width="999" height="359" rx="14" fill="#0d1117" stroke="#232b36"/>
   <g clip-path="url(#round)">
     <rect x="0" y="0" width="1000" height="360" fill="url(#glow)"/>
@@ -22,7 +21,7 @@
     <circle cx="26" cy="20" r="6" fill="#f85149"/>
     <circle cx="46" cy="20" r="6" fill="#d29922"/>
     <circle cx="66" cy="20" r="6" fill="#3fb950"/>
-    <text x="90" y="25" font-size="13" fill="#8b949e">spinup — SpinupWP control center</text>
+    <text x="90" y="24.68" font-size="13" fill="#8b949e">spinup — SpinupWP control center</text>
 
     <!-- logo (vector block font) -->
     <rect x="137" y="84" width="22" height="22" rx="2" fill="url(#logoGrad)"/>
@@ -109,6 +108,7 @@
     <!-- tagline + pulse -->
     <text x="500" y="248" font-size="17" text-anchor="middle" fill="#e6edf3">Terminal control center for your SpinupWP fleet</text>
     <text x="500" y="272" font-size="13" text-anchor="middle" fill="#0a8f64" letter-spacing="2">· · • ● • · · · · · · ·</text>
+    
 
     <!-- faux status bar (mirrors the real app chrome) -->
     <rect x="0" y="330" width="1000" height="30" fill="#161b22"/>
