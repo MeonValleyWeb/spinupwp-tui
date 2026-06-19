@@ -8,7 +8,11 @@
 import { createContext, useContext, useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { SpinupWPClient, ApiError, type ServerService } from "../api/client.ts"
 import type { Server, Site, Event } from "../api/types.ts"
-import { loadConfig } from "../config.ts"
+import { loadConfig, saveConfig } from "../config.ts"
+import { resolveLocalLink, expandPath, normalizeLink, type LocalLink } from "../lib/local.ts"
+import type { Stack } from "../lib/stack.ts"
+import { openTerminalAt, openUrl, openSshSession } from "../lib/open.ts"
+import { gitDrift, type Drift } from "../lib/gitStatus.ts"
 import { probeSite } from "../lib/probe.ts"
 import { fetchRebootInfo, type RebootInfo } from "../lib/ssh.ts"
 import { StackCache, siteSignature, type CachedProbe } from "../lib/stackCache.ts"
@@ -98,6 +102,45 @@ interface StoreValue extends DataState {
   rebootInfoLoading: Set<number>
   rebootInfoErrors: Map<number, string>
   loadRebootInfo: (server: Server) => void
+  // The site whose local-link overlay is open, or null. Set by site views.
+  localLinkSite: Site | null
+  setLocalLinkSite: (s: Site | null) => void
+  // Local working-copy links, keyed by site id (hydrated from config; persisted
+  // on every change). Phase 1: manual link/unlink + view, no mutation.
+  localLinks: Map<number, LocalLink>
+  // Create or update a site's local link and persist it to the config file.
+  linkSite: (siteId: number, link: LocalLink) => void
+  // Remove a site's local link and persist the removal.
+  unlinkSite: (siteId: number) => void
+  // Configured scan roots for auto-discovery (hydrated from config, persisted on
+  // change). The discovery overlay scans these for local working copies.
+  localRoots: string[]
+  addLocalRoot: (dir: string) => void
+  // Whether the local-copy discovery overlay is open.
+  discoverOpen: boolean
+  setDiscoverOpen: (v: boolean) => void
+  // Whether the "needs a local copy" (forgotten) report overlay is open, and an
+  // optional stack filter (set from the selected Stacks group when opened).
+  forgottenOpen: boolean
+  setForgottenOpen: (v: boolean) => void
+  forgottenStack: Stack | null
+  setForgottenStack: (s: Stack | null) => void
+  // When true, closing the link overlay reopens the forgotten report (set only
+  // when the link overlay was opened from that report, so Esc behaves normally
+  // everywhere else).
+  linkReturnToForgotten: boolean
+  setLinkReturnToForgotten: (v: boolean) => void
+  // Open the local working copy in a terminal / the local URL in a browser.
+  // Centralized so every surface (overlay, Stacks, Browser) behaves identically;
+  // each returns a short status message for the caller to flash.
+  openLocalTerminal: (siteId: number) => string
+  openLocalUrl: (siteId: number) => string
+  // Open a terminal and SSH into the site (site_user@server_ip). Returns a flash.
+  sshSite: (siteId: number) => string
+  // Local git drift for linked sites, keyed by site id (null = not a git repo,
+  // undefined = not yet computed). Computed lazily + cached; cleared on refresh.
+  drift: Map<number, Drift | null>
+  ensureDrift: (siteId: number, linkPath: string) => void
   // Optional SSH user override for the health view (from env/config).
   sshUser: string | null
   // SpinupWP account slug (from env/config) for building web deep links.
@@ -151,6 +194,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [phpUpgrades, setPhpUpgrades] = useState<Map<number, PhpUpgradeProgress>>(new Map())
   const [serverActionsServer, setServerActionsServer] = useState<Server | null>(null)
   const [serverOps, setServerOps] = useState<Map<number, ServerOpProgress>>(new Map())
+  const [localLinkSite, setLocalLinkSite] = useState<Site | null>(null)
+  const [localRoots, setLocalRoots] = useState<string[]>(() => [...cfgRef.current.localRoots])
+  const [discoverOpen, setDiscoverOpen] = useState(false)
+  const [forgottenOpen, setForgottenOpen] = useState(false)
+  const [forgottenStack, setForgottenStack] = useState<Stack | null>(null)
+  const [linkReturnToForgotten, setLinkReturnToForgotten] = useState(false)
+  const [drift, setDrift] = useState<Map<number, Drift | null>>(new Map())
+  // Tracks which site ids have had a drift check requested (so we compute once
+  // per site per session); a ref keeps ensureDrift stable across renders.
+  const driftRequested = useRef<Set<number>>(new Set())
+  // Hydrate local links from the stored config (JSON keys are strings → number).
+  const [localLinks, setLocalLinks] = useState<Map<number, LocalLink>>(
+    () => new Map(Object.entries(cfgRef.current.localSites).map(([id, link]) => [Number(id), normalizeLink(link)])),
+  )
   const [rebootInfo, setRebootInfo] = useState<Map<number, RebootInfo>>(new Map())
   const [rebootInfoLoading, setRebootInfoLoading] = useState<Set<number>>(new Set())
   const [rebootInfoErrors, setRebootInfoErrors] = useState<Map<number, string>>(new Map())
@@ -178,6 +235,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     setLoading(true)
     setError(null)
+    // Drift can go stale once the user commits/pushes in their terminal — clear
+    // the cache on refresh so it recomputes next time a linked site is shown.
+    driftRequested.current.clear()
+    setDrift(new Map())
     try {
       // Servers + sites first (the core data); events are best-effort.
       const [srv, ste] = await Promise.all([client.listServers(), client.listSites()])
@@ -420,6 +481,95 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [rebootInfoLoading, sites],
   )
 
+  // Persist the link map to the config file (write-through). The stored shape
+  // keys by site id as a string; cfgRef is kept in sync so a later reload of the
+  // store sees the change.
+  const persistLinks = useCallback((next: Map<number, LocalLink>) => {
+    const record: Record<string, LocalLink> = {}
+    for (const [id, link] of next) record[String(id)] = link
+    cfgRef.current.localSites = record
+    void saveConfig({ localSites: record })
+  }, [])
+
+  const linkSite = useCallback(
+    (siteId: number, link: LocalLink) =>
+      setLocalLinks((prev) => {
+        const next = new Map(prev).set(siteId, link)
+        persistLinks(next)
+        return next
+      }),
+    [persistLinks],
+  )
+
+  const unlinkSite = useCallback(
+    (siteId: number) =>
+      setLocalLinks((prev) => {
+        if (!prev.has(siteId)) return prev
+        const next = new Map(prev)
+        next.delete(siteId)
+        persistLinks(next)
+        return next
+      }),
+    [persistLinks],
+  )
+
+  const addLocalRoot = useCallback((dir: string) => {
+    const trimmed = dir.trim()
+    if (!trimmed) return
+    setLocalRoots((prev) => {
+      if (prev.includes(trimmed)) return prev
+      const next = [...prev, trimmed]
+      cfgRef.current.localRoots = next
+      void saveConfig({ localRoots: next })
+      return next
+    })
+  }, [])
+
+  const openLocalTerminal = useCallback(
+    (siteId: number) => {
+      const link = localLinks.get(siteId)
+      if (!link) return "Not linked — press L to link a local copy"
+      if (!resolveLocalLink(link).exists) return "Local path is missing — press L to fix it"
+      openTerminalAt(expandPath(link.path), cfgRef.current.terminalApp)
+      return "Opening a terminal at the local path…"
+    },
+    [localLinks],
+  )
+
+  const openLocalUrl = useCallback(
+    (siteId: number) => {
+      const link = localLinks.get(siteId)
+      if (!link) return "Not linked — press L to link a local copy"
+      if (!link.localUrl) return "No local URL set — press L to add one"
+      openUrl(link.localUrl)
+      return "Opening the local URL…"
+    },
+    [localLinks],
+  )
+
+  const sshSite = useCallback(
+    (siteId: number) => {
+      const site = sites.find((s) => s.id === siteId)
+      if (!site) return ""
+      const server = servers.find((s) => s.id === site.server_id)
+      const host = server?.ip_address
+      const user = site.site_user ?? cfgRef.current.sshUser
+      if (!host || !user) return "Can't SSH — missing site user or server IP"
+      openSshSession(user, host, server?.ssh_port, cfgRef.current.terminalApp)
+      return `Opening SSH to ${site.domain}…`
+    },
+    [sites, servers],
+  )
+
+  // Compute a linked site's git drift once (cached), fire-and-forget. Stable
+  // across renders (uses a ref for the dedup set), so views can call it freely
+  // from an effect when a linked site comes into view.
+  const ensureDrift = useCallback((siteId: number, linkPath: string) => {
+    if (driftRequested.current.has(siteId)) return
+    driftRequested.current.add(siteId)
+    void gitDrift(linkPath).then((d) => setDrift((prev) => new Map(prev).set(siteId, d)))
+  }, [])
+
   const value: StoreValue = {
     servers,
     sites,
@@ -448,6 +598,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     serverOps,
     startServerOp,
     clearServerOp,
+    localLinkSite,
+    setLocalLinkSite,
+    localLinks,
+    linkSite,
+    unlinkSite,
+    localRoots,
+    addLocalRoot,
+    discoverOpen,
+    setDiscoverOpen,
+    forgottenOpen,
+    setForgottenOpen,
+    forgottenStack,
+    setForgottenStack,
+    linkReturnToForgotten,
+    setLinkReturnToForgotten,
+    openLocalTerminal,
+    openLocalUrl,
+    sshSite,
+    drift,
+    ensureDrift,
     rebootInfo,
     rebootInfoLoading,
     rebootInfoErrors,
