@@ -11,6 +11,45 @@ versions; such changes are called out here.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-19
+
+### Added
+- **Link local working copies.** Press `L` on a site (Servers / Stacks / Search)
+  to link it to its local checkout — a path plus the local URL where you serve it.
+  The site's details gain a "Local" field, and you can open the copy with `t` (a
+  terminal at the path) or `v` (its local URL in your browser).
+- **Auto-discover local copies.** Press `S` in the Stacks tab to scan one or more
+  folders and match their subdirectories to sites — by git remote, Bedrock
+  `WP_HOME`, or folder name — then batch-link the matches. Add scan folders inline
+  (comma-separated) the first time.
+- **"Needs a local copy" report.** Press `f` in the Stacks tab for the managed
+  sites you have no usable local copy for (never linked, or a missing path),
+  alphabetical and filterable by stack with `←/→`; `a` trims to the ones needing
+  attention (pending updates).
+- **Local drift at a glance.** A linked, on-disk site shows `⇡N unpushed` /
+  `● uncommitted` in the context strip (read from the local repo; no network).
+- **SSH into a site.** Press `s` on a site to open a new terminal already running
+  `ssh` into it (`{site_user}@{server_ip}`).
+- **Glanceable row markers.** `◆` marks sites with a linked local copy and `↑N`
+  shows pending WordPress updates, across the Servers / Stacks / Search lists.
+- **"Explain this screen."** Press `i` on any view for a plain-language guide to
+  what each pane is and what every key does there.
+- **Per-view subtitles** under the tab bar describing each screen and its key actions.
+
+### Changed
+- **Outcome-oriented key labels:** "detect" → "identify app", "scan local" →
+  "find local copies", "upgrade PHP" → "change PHP".
+- **Terminal actions open *your* terminal**, detected from `$TERM_PROGRAM` (e.g.
+  iTerm), not a hardcoded Terminal.app; override with a `terminalApp` config/env value.
+- **New config keys:** `localRoots` (folders to scan) and `localSites` (per-site
+  link: path + local URL). The local URL is tool-agnostic (Valet, Cove, LocalWP,
+  Herd, DDEV, …); an older `valetUrl` key is read and migrated automatically.
+
+### Notes
+- All new actions are read/local-only — no new SpinupWP API writes.
+- "Open a terminal" and SSH script iTerm or Terminal on macOS; other terminals
+  fall back to Terminal.app.
+
 ## [0.4.0] - 2026-06-18
 
 ### Added
@@ -125,7 +164,8 @@ Initial tagged release.
 ### Notes
 - Read-only release: works with a SpinupWP **Read Only** API token.
 
-[Unreleased]: https://github.com/mwender/spinupwp-tui/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/mwender/spinupwp-tui/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/mwender/spinupwp-tui/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/mwender/spinupwp-tui/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/mwender/spinupwp-tui/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/mwender/spinupwp-tui/compare/v0.1.0...v0.2.0
