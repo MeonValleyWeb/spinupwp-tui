@@ -5,7 +5,7 @@
 // truth keeps the splash screen, header, and views in sync, and lets any view
 // trigger a refresh.
 
-import { createContext, useContext, useCallback, useEffect, useRef, useState, type ReactNode } from "react"
+import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { SpinupWPClient, ApiError, type ServerService } from "../api/client.ts"
 import type { Server, Site, Event } from "../api/types.ts"
 import { loadConfig, saveConfig } from "../config.ts"
@@ -14,6 +14,22 @@ import type { Stack } from "../lib/stack.ts"
 import { openTerminalAt, openUrl, openSshSession } from "../lib/open.ts"
 import { gitDrift, type Drift } from "../lib/gitStatus.ts"
 import { probeSite } from "../lib/probe.ts"
+import { resolveZone, normalizeDomain } from "../lib/dns.ts"
+import { DnsCache, type CachedDns } from "../lib/dnsCache.ts"
+import {
+  verifyConnection as verifyProviderConnection,
+  apiProviderFor,
+  nameserversMatch,
+  PROVIDER_CONSOLE,
+  PROVIDER_REGISTRY,
+  ALL_PROVIDERS,
+  type Connection,
+  type ConnProvider,
+  type VerifyResult,
+  type AccessState,
+} from "../lib/providers.ts"
+import { ProvidersCache, type VerifiedConn } from "../lib/providersCache.ts"
+import type { StoredProviders } from "../config.ts"
 import { fetchRebootInfo, type RebootInfo } from "../lib/ssh.ts"
 import { StackCache, siteSignature, type CachedProbe } from "../lib/stackCache.ts"
 import { resolvePhpEolDates, refreshPhpEolDates, isPhpEol as isPhpEolWith, offeredPhpVersions as offeredPhpVersionsWith, type PhpEolDates } from "../lib/phpEol.ts"
@@ -157,6 +173,40 @@ interface StoreValue extends DataState {
   runProbeMany: (sites: Site[]) => void
   // Whether a cached probe for this site is stale (site shape changed since).
   isProbeStale: (site: Site) => boolean
+  // DNS zone-host lookups (read-only). Hydrated from disk at startup; resolved
+  // lazily on demand (never auto-fired on selection — network cost).
+  dnsZones: Map<string, CachedDns> // by normalized domain (www-stripped, lowercased)
+  dnsResolving: Set<string> // normalized domains with an in-flight lookup
+  // Resolve every domain of a site / of all sites on a server (bounded conc).
+  lookupSiteDns: (site: Site, force?: boolean) => void
+  lookupServerDns: (serverId: number, force?: boolean) => void
+  // The cached zone-host for a domain (undefined = never looked up).
+  zoneForDomain: (domain: string) => CachedDns | undefined
+  isDnsResolving: (domain: string) => boolean
+  // The server whose DNS-inventory overlay is open, or null. Set by site views.
+  dnsInventoryServer: Server | null
+  setDnsInventoryServer: (s: Server | null) => void
+  // DNS provider connections (Phase 2), keyed by provider — each is a credential
+  // ("account"). The overlay lists + manages them. `providerZones` holds each
+  // connection's last verified zone set (hydrated from disk). Secrets persist to
+  // config (chmod 600).
+  connections: Record<ConnProvider, Connection[]>
+  connectionsFor: (provider: ConnProvider) => Connection[]
+  connectionCount: number // total across all providers
+  providerZones: Map<string, VerifiedConn> // by connection id
+  // Add a connection: verify FIRST, persist + cache only on success; returns the
+  // verify result so the overlay can show zones or the error.
+  addConnection: (provider: ConnProvider, label: string, creds: Record<string, string>) => Promise<VerifyResult>
+  removeConnection: (id: string) => void // stored connections only (not env)
+  verifyConnectionById: (id: string) => void // re-verify + refresh cache
+  // Access state for a zone, from its live host, the live authoritative NS, and
+  // the verified zones we can reach. Provider-scoped + NS-aware (see store impl).
+  accessForZone: (apex: string, hostKey: string, liveNs: string[]) => AccessState
+  // The connection (account) label that owns/serves a zone, or "" if none.
+  accountForZone: (apex: string, hostKey: string, liveNs: string[]) => string
+  // The zone whose provider-connect overlay is open (apex + its host key), or null.
+  connectZoneTarget: { apex: string; hostKey: string } | null
+  setConnectZoneTarget: (t: { apex: string; hostKey: string } | null) => void
   // Whether a PHP version is past end-of-life (real dates vs today, refreshed).
   isPhpEol: (version: string | null | undefined) => boolean
   // PHP versions to offer in the upgrade picker (dynamic; current always included).
@@ -222,6 +272,30 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [probes, setProbes] = useState<Map<number, CachedProbe>>(() => cacheRef.current!.snapshot())
   const [probingIds, setProbingIds] = useState<Set<number>>(new Set())
   const [probeErrors, setProbeErrors] = useState<Map<number, string>>(new Map())
+
+  // DNS zone-host cache: hydrate from disk once (no network at startup); lookups
+  // run lazily on demand and write through to disk. `dnsInFlight` is a ref so the
+  // lookup actions can dedupe concurrent requests without re-rendering.
+  const dnsCacheRef = useRef<DnsCache | null>(null)
+  if (!dnsCacheRef.current) {
+    dnsCacheRef.current = new DnsCache()
+    dnsCacheRef.current.load()
+  }
+  const dnsInFlight = useRef<Set<string>>(new Set())
+  const [dnsZones, setDnsZones] = useState<Map<string, CachedDns>>(() => dnsCacheRef.current!.snapshot())
+  const [dnsResolving, setDnsResolving] = useState<Set<string>>(new Set())
+  const [dnsInventoryServer, setDnsInventoryServer] = useState<Server | null>(null)
+
+  // DNS provider connections (Phase 2). Connections hydrate from config (stored +
+  // env); their verified zone sets hydrate from disk and re-verify on demand.
+  const providersCacheRef = useRef<ProvidersCache | null>(null)
+  if (!providersCacheRef.current) {
+    providersCacheRef.current = new ProvidersCache()
+    providersCacheRef.current.load()
+  }
+  const [connections, setConnections] = useState<Record<ConnProvider, Connection[]>>(() => cfgRef.current.providerConnections)
+  const [providerZones, setProviderZones] = useState<Map<string, VerifiedConn>>(() => providersCacheRef.current!.snapshot())
+  const [connectZoneTarget, setConnectZoneTarget] = useState<{ apex: string; hostKey: string } | null>(null)
 
   // PHP EOL dates: embedded defaults overlaid with the last cached fetch; a
   // background refresh (endoflife.date) updates them when the cache is stale.
@@ -570,6 +644,216 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     void gitDrift(linkPath).then((d) => setDrift((prev) => new Map(prev).set(siteId, d)))
   }, [])
 
+  // ---- DNS zone-host lookups -------------------------------------------------
+
+  // Resolve one domain's zone host (cache first). Concurrency-safe — the ref-based
+  // in-flight set dedupes, and a fresh cache entry short-circuits unless forced.
+  const dnsResolveOne = useCallback(async (domain: string, force: boolean) => {
+    const cache = dnsCacheRef.current!
+    const key = normalizeDomain(domain)
+    if (!key || dnsInFlight.current.has(key)) return
+    if (!force && !cache.isStale(key)) return
+    dnsInFlight.current.add(key)
+    setDnsResolving((prev) => new Set(prev).add(key))
+    try {
+      const zone = await resolveZone(key)
+      await cache.set(key, zone)
+      setDnsZones(cache.snapshot())
+    } finally {
+      dnsInFlight.current.delete(key)
+      setDnsResolving((prev) => {
+        const next = new Set(prev)
+        next.delete(key)
+        return next
+      })
+    }
+  }, [])
+
+  // Resolve many domains with a bounded pool (skips fresh/in-flight unless forced).
+  const dnsLookupMany = useCallback(
+    (domains: string[], force = false) => {
+      const cache = dnsCacheRef.current!
+      const keys = Array.from(new Set(domains.map(normalizeDomain).filter(Boolean)))
+      const queue = keys.filter((k) => !dnsInFlight.current.has(k) && (force || cache.isStale(k)))
+      if (queue.length === 0) return
+      const CONCURRENCY = 5
+      let cursor = 0
+      const worker = async () => {
+        while (cursor < queue.length) await dnsResolveOne(queue[cursor++], force)
+      }
+      for (let i = 0; i < Math.min(CONCURRENCY, queue.length); i++) void worker()
+    },
+    [dnsResolveOne],
+  )
+
+  const domainsForSite = (site: Site): string[] => [
+    site.domain,
+    ...(site.additional_domains?.map((a) => a.domain) ?? []),
+  ]
+
+  const lookupSiteDns = useCallback(
+    (site: Site, force = false) => dnsLookupMany(domainsForSite(site), force),
+    [dnsLookupMany],
+  )
+
+  const lookupServerDns = useCallback(
+    (serverId: number, force = false) => {
+      const domains: string[] = []
+      for (const s of sites) if (s.server_id === serverId) domains.push(...domainsForSite(s))
+      dnsLookupMany(domains, force)
+    },
+    [dnsLookupMany, sites],
+  )
+
+  const zoneForDomain = useCallback((domain: string) => dnsZones.get(normalizeDomain(domain)), [dnsZones])
+  const isDnsResolving = useCallback((domain: string) => dnsResolving.has(normalizeDomain(domain)), [dnsResolving])
+
+  // ---- DNS provider connections (Phase 2 access detection) -------------------
+
+  const genConnId = (provider: ConnProvider) =>
+    `${provider}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+
+  const allConnections = useMemo(() => ALL_PROVIDERS.flatMap((p) => connections[p]), [connections])
+  const connectionsFor = useCallback((provider: ConnProvider) => connections[provider], [connections])
+
+  // Zones we can reach, keyed by `${provider}:${apex}` → list of candidate
+  // accounts (label + the account-zone's assigned nameservers). Provider-scoped:
+  // a Cloudflare-hosted zone is only reachable via a connected CLOUDFLARE account.
+  const reachable = useMemo(() => {
+    const m = new Map<string, { label: string; ns: string[] }[]>()
+    for (const conn of allConnections) {
+      const v = providerZones.get(conn.id)
+      if (v?.ok)
+        for (const z of v.zones) {
+          const key = `${conn.provider}:${z.apex}`
+          const list = m.get(key) ?? []
+          list.push({ label: conn.label || conn.id, ns: z.nameservers ?? [] })
+          m.set(key, list)
+        }
+    }
+    return m
+  }, [allConnections, providerZones])
+
+  // Pick the candidate account that actually SERVES a zone, using the live
+  // authoritative nameservers when the account's NS are known (catches stale /
+  // duplicate zones across accounts). When no NS are known (e.g. AWS), fall back
+  // to membership — provider-scoping already guarantees the right provider.
+  const matchedAccount = useCallback(
+    (apex: string, hostKey: string, liveNs: string[]): { editable: boolean; label: string } => {
+      const prov = apiProviderFor(hostKey)
+      if (!prov) return { editable: false, label: "" }
+      const candidates = reachable.get(`${prov}:${apex}`) ?? []
+      if (candidates.length === 0) return { editable: false, label: "" }
+      const withNs = candidates.filter((c) => c.ns.length > 0)
+      // If we know any candidate's NS, require a live match to count as editable.
+      if (withNs.length > 0 && liveNs.length > 0) {
+        const live = withNs.find((c) => nameserversMatch(c.ns, liveNs))
+        if (live) return { editable: true, label: live.label }
+        // Some candidates have NS but none serve the live zone → only editable if
+        // another candidate's NS are unknown (can't disprove it).
+        const unknown = candidates.find((c) => c.ns.length === 0)
+        return unknown ? { editable: true, label: unknown.label } : { editable: false, label: "" }
+      }
+      // No NS info to match on → membership (provider-scoped) is the best we have.
+      return { editable: true, label: candidates[0].label }
+    },
+    [reachable],
+  )
+
+  const accessForZone = useCallback(
+    (apex: string, hostKey: string, liveNs: string[]): AccessState => {
+      const prov = apiProviderFor(hostKey)
+      if (prov) {
+        if (matchedAccount(apex, hostKey, liveNs).editable) return "editable"
+        // Not reachable via API: providers with a console fallback (GoDaddy, whose
+        // API is gated) show `web`; others show `needs-key`.
+        return PROVIDER_REGISTRY[prov].console ? "web" : "needs-key"
+      }
+      if (PROVIDER_CONSOLE[hostKey]) return "web"
+      return "unknown"
+    },
+    [matchedAccount],
+  )
+
+  const accountForZone = useCallback(
+    (apex: string, hostKey: string, liveNs: string[]) => matchedAccount(apex, hostKey, liveNs).label,
+    [matchedAccount],
+  )
+
+  // Persist the stored (non-env) connections to config, keeping cfgRef in sync.
+  const persistConnections = useCallback((next: Record<ConnProvider, Connection[]>) => {
+    cfgRef.current.providerConnections = next
+    const providers: StoredProviders = {}
+    for (const p of ALL_PROVIDERS) {
+      providers[p] = next[p].filter((c) => !c.env).map((c) => ({ id: c.id, label: c.label, creds: c.creds }))
+    }
+    void saveConfig({ providers })
+  }, [])
+
+  // Verify a connection and write the result through to the cache.
+  const verifyAndCache = useCallback(async (conn: Connection): Promise<VerifyResult> => {
+    const res = await verifyProviderConnection(conn)
+    await providersCacheRef.current!.set(conn.id, {
+      ok: res.ok,
+      zones: res.zones,
+      accountLabel: res.accountLabel,
+      error: res.error,
+      verifiedAt: Date.now(),
+    })
+    setProviderZones(providersCacheRef.current!.snapshot())
+    return res
+  }, [])
+
+  const addConnection = useCallback(
+    async (provider: ConnProvider, label: string, creds: Record<string, string>): Promise<VerifyResult> => {
+      const trimmed: Record<string, string> = {}
+      for (const [k, v] of Object.entries(creds)) trimmed[k] = v.trim()
+      const conn: Connection = { id: genConnId(provider), provider, label: label.trim(), creds: trimmed }
+      const res = await verifyAndCache(conn)
+      if (!res.ok) {
+        // Don't keep a credential we couldn't verify; drop its cache entry.
+        await providersCacheRef.current!.delete(conn.id)
+        setProviderZones(providersCacheRef.current!.snapshot())
+        return res
+      }
+      conn.label = conn.label || res.accountLabel || provider
+      setConnections((prev) => {
+        const next = { ...prev, [provider]: [...prev[provider], conn] }
+        persistConnections(next)
+        return next
+      })
+      return res
+    },
+    [verifyAndCache, persistConnections],
+  )
+
+  const removeConnection = useCallback(
+    (id: string) => {
+      setConnections((prev) => {
+        let changed = false
+        const next = {} as Record<ConnProvider, Connection[]>
+        for (const p of ALL_PROVIDERS) {
+          const filtered = prev[p].filter((c) => c.id !== id || c.env) // env can't be removed
+          if (filtered.length !== prev[p].length) changed = true
+          next[p] = filtered
+        }
+        if (!changed) return prev
+        persistConnections(next)
+        void providersCacheRef.current!.delete(id).then(() => setProviderZones(providersCacheRef.current!.snapshot()))
+        return next
+      })
+    },
+    [persistConnections],
+  )
+
+  const verifyConnectionById = useCallback(
+    (id: string) => {
+      const conn = allConnections.find((c) => c.id === id)
+      if (conn) void verifyAndCache(conn)
+    },
+    [allConnections, verifyAndCache],
+  )
+
   const value: StoreValue = {
     servers,
     sites,
@@ -632,6 +916,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     runProbe,
     runProbeMany,
     isProbeStale,
+    dnsZones,
+    dnsResolving,
+    lookupSiteDns,
+    lookupServerDns,
+    zoneForDomain,
+    isDnsResolving,
+    dnsInventoryServer,
+    setDnsInventoryServer,
+    connections,
+    connectionsFor,
+    connectionCount: allConnections.length,
+    providerZones,
+    addConnection,
+    removeConnection,
+    verifyConnectionById,
+    accessForZone,
+    accountForZone,
+    connectZoneTarget,
+    setConnectZoneTarget,
     isPhpEol,
     offeredPhpVersions,
   }
