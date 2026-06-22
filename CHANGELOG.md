@@ -24,6 +24,27 @@ versions; such changes are called out here.
 - **Open the DNS view scoped to one site.** Press `n` on a site (Servers or Search)
   to open the inventory for just that site's domains and records — the view you want
   when migrating a single site. Press `a` inside to expand to the whole server.
+- **Download a production database backup.** On a linked WordPress site, press
+  `d` in Search to export the production database with `wp-cli` (into a stage file
+  *outside* the public webroot), gzip it, download it into the linked copy's
+  `sql/` folder, and remove the remote copy. **Read-only on production** and needs
+  no local WP-CLI — the export runs on the server. The remote document root and
+  SSH target are derived from the API; SSH/scp run non-interactively. A spinner on
+  the site's row tracks an in-flight download even after the overlay is closed.
+  (See "Database backup & sync" in the README.)
+- **Pull production → local DB sync (opt-in).** Press `p` on a linked WordPress
+  site to refresh your **local** database from production: it backs up the local
+  DB first, exports + downloads production, imports it locally, rewrites
+  production URLs → your local URL (`wp search-replace`), and runs an optional
+  `bin/sync.d/post-import.sh` hook if the project has one. Works with Standard WP
+  and Bedrock, detecting the local WordPress root, local URL (link or `.env`
+  `WP_HOME`), and table prefix automatically — no per-site config. **It overwrites
+  your local database, so it's off by default**; enable it with `localSync` (a
+  `config.json` field, preferred, or the `SPINUPWP_LOCAL_SYNC` env var). Read-only
+  on production.
+- **Site Control panel.** The Search result's action menu is now grouped
+  (Open / Remote / Local / Server) so the growing set of per-site actions stays
+  scannable.
 
 ### Changed
 - **The DNS view is now a migration lens, organized by site.** It shows only the
@@ -38,11 +59,14 @@ versions; such changes are called out here.
 ### Notes
 - Only the **TTL** is editable so far (repointing a record's target is a later step).
   Cloudflare **proxied** records are read-only (their TTL is managed by Cloudflare).
-  By design the view only ever touches a site's own hosting records — your MX, TXT,
-  and other zone records are never shown or modified, so moving a site can't take
-  down its email.
+  By design the DNS view only ever touches a site's own hosting records — your MX,
+  TXT, and other zone records are never shown or modified, so moving a site can't
+  take down its email.
 - Editing a Cloudflare record needs a token scoped to `Zone.DNS:Edit` (the read-only
   `Zone:Read` token from the host inventory isn't enough).
+- The DB backup/sync actions only appear for **WordPress** sites (they use
+  `wp-cli`), and only when the site is **linked** to a local copy (the backup's
+  destination). The destructive sync additionally requires the `localSync` opt-in.
 
 ## [0.6.0] - 2026-06-20
 
