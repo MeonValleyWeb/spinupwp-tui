@@ -20,22 +20,25 @@ import { probeKindColor, type ProbeKind } from "../../lib/probe.ts"
 import { Panel, Spinner, PhpVersionCell, SiteMetaCell } from "../components.tsx"
 import { List, moveSelection } from "../List.tsx"
 import { StatusBar } from "../StatusBar.tsx"
-import { SiteContextStrip, SITE_CONTEXT_STRIP_HEIGHT } from "../Details.tsx"
+import { SiteContextStrip, SITE_CONTEXT_STRIP_HEIGHT, ExternalSiteDetail } from "../Details.tsx"
 import { openUrl } from "../../lib/open.ts"
 import { siteWebUrl } from "../../lib/spinupweb.ts"
+import { vercelProjectUrl } from "../../providers/vercel.ts"
 import { useStore } from "../store.tsx"
 import type { Site } from "../../api/types.ts"
+import type { InventorySite } from "../../providers/types.ts"
 
 type Focus = "groups" | "sites"
 
 // A selectable row in the composition pane: a top-level bucket (level 0) or a
-// Non-WP sub-category (level 1).
+// Non-WP sub-category (level 1), or a provider group (level 0).
 interface Group {
   id: string
   label: string
   level: 0 | 1
   color: string
   sites: Site[]
+  externalSites?: InventorySite[]
 }
 
 // Non-WP sub-categories, in display order. `kind: null` = not yet probed.
@@ -49,7 +52,7 @@ const NONWP_SUBS: { kind: ProbeKind | null; label: string }[] = [
 
 export function Stacks({ rows }: { rows: number }) {
   const store = useStore()
-  const { sites, serverById, route, inputMode, overlayOpen, probes, probingIds, probeErrors, runProbe, runProbeMany, isProbeStale, isPhpEol, accountSlug, setPhpUpgradeSite, phpUpgrades, setLocalLinkSite, openLocalTerminal, openLocalUrl, localLinks, setDiscoverOpen, setForgottenOpen, setForgottenStack, sshSite } =
+  const { sites, serverById, route, inputMode, overlayOpen, probes, probingIds, probeErrors, runProbe, runProbeMany, isProbeStale, isPhpEol, accountSlug, vercelTeamId, setPhpUpgradeSite, phpUpgrades, setLocalLinkSite, openLocalTerminal, openLocalUrl, localLinks, setDiscoverOpen, setForgottenOpen, setForgottenStack, sshSite, providerInventories } =
     store
 
   const [groupIndex, setGroupIndex] = useState(0)
@@ -63,8 +66,9 @@ export function Stacks({ rows }: { rows: number }) {
   }
 
   // Bucket every site by EFFECTIVE stack (probe overrides Tier-1), build the
-  // selectable groups (with Non-WP sub-rows), and the fleet PHP histogram.
-  const { groups, php } = useMemo(() => {
+  // selectable groups (with Non-WP sub-rows), provider framework groups, and
+  // the fleet PHP histogram.
+  const { groups, php, totalSites, totalExternal } = useMemo(() => {
     const byStack = new Map<Stack, Site[]>(STACKS.map((s) => [s, []]))
     const phpCounts = new Map<string, number>()
     for (const site of sites) {
@@ -93,15 +97,37 @@ export function Stacks({ rows }: { rows: number }) {
         }
       }
     }
+
+    // Provider groups: one per distinct framework across all provider inventories.
+    const providerFrameworks = new Map<string, InventorySite[]>()
+    for (const inv of providerInventories) {
+      for (const site of inv.sites) {
+        const framework = site.stack ?? "unknown"
+        const key = `${inv.provider}:${framework}`
+        const list = providerFrameworks.get(key) ?? []
+        list.push(site)
+        providerFrameworks.set(key, list)
+      }
+    }
+    for (const [key, externalSites] of providerFrameworks) {
+      externalSites.sort((a, b) => a.name.localeCompare(b.name))
+      const [provider, framework] = key.split(":")
+      const label = `${provider}/${framework}`
+      groups.push({ id: `provider:${key}`, label, level: 0, color: theme.purple, sites: [], externalSites })
+    }
+
     const php = [...phpCounts.entries()].sort((a, b) => phpSortKey(b[0]) - phpSortKey(a[0]))
-    return { groups, php }
-  }, [sites, probes])
+    const totalExt = [...providerFrameworks.values()].reduce((n, l) => n + l.length, 0)
+    return { groups, php, totalSites: sites.length, totalExternal: totalExt }
+  }, [sites, probes, providerInventories])
 
   // Keep selection in range as groups appear/disappear with probing.
   const safeGroupIndex = Math.min(groupIndex, groups.length - 1)
   const selectedGroup = groups[safeGroupIndex]
   const groupSites = selectedGroup?.sites ?? []
-  const total = sites.length || 1
+  const groupExternal = selectedGroup?.externalSites ?? []
+  const isExternalGroup = groupExternal.length > 0
+  const total = (totalSites + totalExternal) || 1
 
   useEffect(() => {
     setSiteIndex(0)
@@ -120,7 +146,7 @@ export function Stacks({ rows }: { rows: number }) {
 
     const moveBy = (delta: number) => {
       if (focus === "groups") setGroupIndex((i) => moveSelection(i, delta, groups.length))
-      else setSiteIndex((i) => moveSelection(i, delta, groupSites.length))
+      else setSiteIndex((i) => moveSelection(i, delta, isExternalGroup ? groupExternal.length : groupSites.length))
     }
 
     switch (k) {
@@ -133,76 +159,72 @@ export function Stacks({ rows }: { rows: number }) {
       case "g":
         return focus === "groups" ? setGroupIndex(0) : setSiteIndex(0)
       case "G":
-        return focus === "groups" ? setGroupIndex(groups.length - 1) : setSiteIndex(groupSites.length - 1)
+        return focus === "groups" ? setGroupIndex(groups.length - 1) : setSiteIndex((isExternalGroup ? groupExternal.length : groupSites.length) - 1)
       case "right":
       case "l":
       case "return":
       case "tab":
-        if (focus === "groups" && groupSites.length > 0) setFocus("sites")
+        if (focus === "groups" && (groupSites.length > 0 || groupExternal.length > 0)) setFocus("sites")
         return
       case "left":
       case "escape":
         if (focus === "sites") setFocus("groups")
         return
       case "o":
-        if (focus === "sites" && groupSites[siteIndex]) {
-          const s = groupSites[siteIndex]
-          openUrl((s.https?.enabled ? "https://" : "http://") + s.domain)
-          flashMsg(`Opening ${s.domain}…`)
+        if (focus === "sites") {
+          if (isExternalGroup && groupExternal[siteIndex]) {
+            const s = groupExternal[siteIndex]
+            const url = s.latestDeployment?.url ?? (s.primaryDomain ? `https://${s.primaryDomain}` : null)
+            if (url) { openUrl(url); flashMsg(`Opening ${s.name}…`) }
+          } else if (groupSites[siteIndex]) {
+            const s = groupSites[siteIndex]
+            openUrl((s.https?.enabled ? "https://" : "http://") + s.domain)
+            flashMsg(`Opening ${s.domain}…`)
+          }
         }
         return
       case "w":
-        // Open the selected site in the SpinupWP web app.
-        if (focus === "sites" && groupSites[siteIndex]) {
-          openUrl(siteWebUrl(groupSites[siteIndex].id, accountSlug))
-          flashMsg(accountSlug ? "Opening in SpinupWP…" : "Set accountSlug for deep links — opening dashboard")
+        if (focus === "sites") {
+          if (isExternalGroup && groupExternal[siteIndex]) {
+            const s = groupExternal[siteIndex]
+            if (s.provider === "vercel") { openUrl(vercelProjectUrl(s.nativeId, vercelTeamId)); flashMsg("Opening in Vercel…") }
+          } else if (groupSites[siteIndex]) {
+            openUrl(siteWebUrl(groupSites[siteIndex].id, accountSlug))
+            flashMsg(accountSlug ? "Opening in SpinupWP…" : "Set accountSlug for deep links — opening dashboard")
+          }
         }
         return
       case "d":
-        // Single probe of the selected site (sites pane only).
-        if (focus === "sites" && groupSites[siteIndex]) {
+        if (focus === "sites" && !isExternalGroup && groupSites[siteIndex]) {
           const s = groupSites[siteIndex]
           runProbe(s)
           flashMsg(`Identifying the app on ${s.domain}…`)
         }
         return
       case "u":
-        // Upgrade the selected site's PHP version (sites pane only).
-        if (focus === "sites" && groupSites[siteIndex]) setPhpUpgradeSite(groupSites[siteIndex])
+        if (focus === "sites" && !isExternalGroup && groupSites[siteIndex]) setPhpUpgradeSite(groupSites[siteIndex])
         return
       case "t":
-        // Open the selected site's local working copy in a terminal (inline; no
-        // modal — the sweep workflow). The strip below shows availability.
-        if (focus === "sites" && groupSites[siteIndex]) flashMsg(openLocalTerminal(groupSites[siteIndex].id))
+        if (focus === "sites" && !isExternalGroup && groupSites[siteIndex]) flashMsg(openLocalTerminal(groupSites[siteIndex].id))
         return
       case "v":
-        // Open the selected site's stored local URL in the browser.
-        if (focus === "sites" && groupSites[siteIndex]) flashMsg(openLocalUrl(groupSites[siteIndex].id))
+        if (focus === "sites" && !isExternalGroup && groupSites[siteIndex]) flashMsg(openLocalUrl(groupSites[siteIndex].id))
         return
       case "s":
-        // Open a terminal and SSH into the selected site.
-        if (focus === "sites" && groupSites[siteIndex]) flashMsg(sshSite(groupSites[siteIndex].id))
+        if (focus === "sites" && !isExternalGroup && groupSites[siteIndex]) flashMsg(sshSite(groupSites[siteIndex].id))
         return
       case "L":
-        // Link / edit the selected site's local working copy (form overlay).
-        if (focus === "sites" && groupSites[siteIndex]) setLocalLinkSite(groupSites[siteIndex])
+        if (focus === "sites" && !isExternalGroup && groupSites[siteIndex]) setLocalLinkSite(groupSites[siteIndex])
         return
       case "S":
-        // Scan configured roots to auto-discover & batch-link local copies.
         return setDiscoverOpen(true)
       case "f": {
-        // Report: sites with no usable local copy (the inverse of S). Seed the
-        // report's stack filter from the selected group — a top-level stack maps
-        // to itself; a Non-WP sub-group (WHMCS/Laravel/…) maps to Non-WP.
         const filter: Stack | null = selectedGroup?.level === 0 ? (selectedGroup.id as Stack) : selectedGroup ? "Non-WP" : null
         setForgottenStack(filter)
         return setForgottenOpen(true)
       }
       case "D":
-        // Probe the ENTIRE selected group, in list order (top→down), regardless
-        // of cursor or focus. runProbeMany skips any already in flight; target
-        // only un-probed sites by selecting the "unprobed" sub-group first.
-        if (selectedGroup && selectedGroup.sites.length > 0) {
+        if (selectedGroup && !isExternalGroup && selectedGroup.sites.length > 0) {
           runProbeMany(selectedGroup.sites)
           flashMsg(`Identifying apps in ${selectedGroup.label} (${selectedGroup.sites.length})…`)
         }
@@ -222,18 +244,26 @@ export function Stacks({ rows }: { rows: number }) {
           { key: "S", label: "find local copies" },
           { key: "f", label: "needs local copy" },
         ]
-      : [
-          { key: "↑↓/jk", label: "select site" },
-          { key: "←/esc", label: "back" },
-          { key: "d", label: "identify app" },
-          { key: "u", label: "change PHP" },
-          { key: "o", label: "open" },
-          { key: "w", label: "SpinupWP" },
-          { key: "s", label: "ssh" },
-        ]
+      : isExternalGroup
+        ? [
+            { key: "↑↓/jk", label: "select" },
+            { key: "←/esc", label: "back" },
+            { key: "o", label: "open" },
+            { key: "w", label: "console" },
+          ]
+        : [
+            { key: "↑↓/jk", label: "select site" },
+            { key: "←/esc", label: "back" },
+            { key: "d", label: "identify app" },
+            { key: "u", label: "change PHP" },
+            { key: "o", label: "open" },
+            { key: "w", label: "SpinupWP" },
+            { key: "s", label: "ssh" },
+          ]
 
   // Status priority: transient flash > batch progress > selected site's error.
-  const selectedSite = focus === "sites" ? groupSites[siteIndex] : undefined
+  const selectedSite = focus === "sites" && !isExternalGroup ? groupSites[siteIndex] : undefined
+  const selectedExternal = focus === "sites" && isExternalGroup ? groupExternal[siteIndex] : undefined
   const selectedError = selectedSite ? probeErrors.get(selectedSite.id) : undefined
   const statusMessage = flash ?? (probingIds.size > 0 ? `⟳ probing ${probingIds.size}…` : selectedError ? `⚠ ${selectedError}` : undefined)
   const statusColorMsg = selectedError && !flash && probingIds.size === 0 ? theme.bad : theme.brand
@@ -242,10 +272,10 @@ export function Stacks({ rows }: { rows: number }) {
     <box style={{ flexGrow: 1, flexDirection: "column" }}>
       <box style={{ flexGrow: 1, flexDirection: "row", padding: 1, gap: 1 }}>
         {/* Composition groups (top-level buckets + Non-WP sub-rows) */}
-        <Panel title={` Stacks (${sites.length}) `} active={focus === "groups"} width={36}>
+        <Panel title={` Stacks (${totalSites + totalExternal}) `} active={focus === "groups"} width={36}>
           <box style={{ flexGrow: 1, flexDirection: "column" }}>
             {groups.map((grp, i) => {
-              const n = grp.sites.length
+              const n = grp.externalSites ? grp.externalSites.length : grp.sites.length
               const selected = i === safeGroupIndex
               const sel = selected && focus === "groups"
               const rowBg = selected ? (focus === "groups" ? theme.selectedBg : theme.bgAlt) : undefined
@@ -278,8 +308,25 @@ export function Stacks({ rows }: { rows: number }) {
         </Panel>
 
         {/* Sites in the selected group */}
-        <Panel title={` ${selectedGroup?.label ?? "—"} · sites (${groupSites.length}) `} active={focus === "sites"} flexGrow={1}>
-          <List
+        <Panel title={` ${selectedGroup?.label ?? "—"} · ${isExternalGroup ? "projects" : "sites"} (${isExternalGroup ? groupExternal.length : groupSites.length}) `} active={focus === "sites"} flexGrow={1}>
+          {isExternalGroup ? (
+            <List
+              items={groupExternal}
+              selectedIndex={siteIndex}
+              viewportRows={listRows}
+              focused={focus === "sites"}
+              keyFor={(s) => s.id}
+              emptyText="No projects in this group"
+              renderRow={(s, selected) => (
+                <>
+                  <text content={truncate(s.name, 40)} fg={selected ? theme.text : theme.textDim} wrapMode="none" style={{ flexGrow: 1, flexShrink: 1 }} />
+                  <text content={truncate(s.primaryDomain ?? "—", 28)} fg={selected ? theme.text : theme.textFaint} wrapMode="none" style={{ flexShrink: 0, marginLeft: 1 }} />
+                  <text content={" " + s.status} fg={selected ? theme.text : statusColor(s.status)} wrapMode="none" style={{ flexShrink: 0, marginLeft: 1 }} />
+                </>
+              )}
+            />
+          ) : (
+            <List
             items={groupSites}
             selectedIndex={siteIndex}
             viewportRows={listRows}
@@ -332,6 +379,7 @@ export function Stacks({ rows }: { rows: number }) {
               )
             }}
           />
+          )}
         </Panel>
 
         {/* PHP version distribution (fleet-wide) */}
@@ -351,7 +399,7 @@ export function Stacks({ rows }: { rows: number }) {
           </box>
         </Panel>
       </box>
-      <SiteContextStrip site={selectedSite ?? null} />
+      <SiteContextStrip site={selectedSite ?? selectedExternal ?? null} />
       <StatusBar hints={hints} message={statusMessage} messageColor={statusColorMsg} />
     </box>
   )

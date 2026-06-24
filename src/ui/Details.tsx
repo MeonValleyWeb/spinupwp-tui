@@ -11,6 +11,7 @@ import { normalizeDomain } from "../lib/dns.ts"
 import type { Drift } from "../lib/gitStatus.ts"
 import { useStore, isUpgradeInFlight, isServerOpInFlight } from "./store.tsx"
 import type { Server, Site } from "../api/types.ts"
+import type { InventorySite } from "../providers/types.ts"
 
 export function ServerDetail({ server, siteCount }: { server: Server; siteCount: number }) {
   const { rebootInfo, serverOps } = useStore()
@@ -163,6 +164,50 @@ export function SiteDetail({ site, serverName }: { site: Site; serverName: strin
   )
 }
 
+// Detail panel for a non-SpinupWP site (e.g. a Vercel project). Shared by the
+// Browser and Search views.
+export function ExternalSiteDetail({ site }: { site: InventorySite }) {
+  return (
+    <box style={{ flexDirection: "column" }}>
+      <box style={{ flexDirection: "row" }}>
+        <text content={truncate(site.name, 34)} fg={theme.text} attributes={1} wrapMode="none" />
+        <box style={{ flexGrow: 1 }} />
+        <StatusBadge status={site.status} />
+      </box>
+      <text content={site.primaryDomain ?? "—"} fg={theme.accent} wrapMode="none" />
+      <box style={{ height: 1 }} />
+
+      <Field label="Provider" value={site.provider} />
+      <Field label="Stack" value={site.stack ?? "—"} />
+      <Field label="Runtime" value={site.runtime ?? "—"} />
+      <Field label="Branch" value={site.branch ?? "—"} />
+      <Field label="Status" value={site.status} />
+
+      {site.domains.length > 0 ? (
+        <>
+          <box style={{ height: 1 }} />
+          <text content="Domains" fg={theme.textDim} />
+          {site.domains.slice(0, 6).map((d) => (
+            <text key={d} content={`  ${truncate(d, 36)}`} fg={theme.textDim} wrapMode="none" />
+          ))}
+          {site.domains.length > 6 ? <text content={`  … +${site.domains.length - 6} more`} fg={theme.textFaint} wrapMode="none" /> : null}
+        </>
+      ) : null}
+
+      {site.latestDeployment ? (
+        <>
+          <box style={{ height: 1 }} />
+          <text content="Latest deploy" fg={theme.textDim} />
+          <Field label="Status" value={site.latestDeployment.status} />
+          {site.latestDeployment.branch ? <Field label="Branch" value={site.latestDeployment.branch} /> : null}
+          {site.latestDeployment.commitSha ? <Field label="Commit" value={truncate(site.latestDeployment.commitSha, 14)} /> : null}
+          {site.latestDeployment.url ? <text content={`  ${truncate(site.latestDeployment.url, 36)}`} fg={theme.textDim} wrapMode="none" /> : null}
+        </>
+      ) : null}
+    </box>
+  )
+}
+
 // DNS zone-host lines for a site's domains, populated on demand (key `n`). Each
 // distinct zone (www + apex collapsed) shows its resolved host; a separate-TLD
 // additional domain surfaces as its own line with its own host. Read-only.
@@ -233,18 +278,22 @@ export const SITE_CONTEXT_STRIP_HEIGHT = 4
 // open-locally actions (which the host view's keyboard fires on the selection).
 // The space is always reserved (a placeholder when nothing is selected) so the
 // layout doesn't jump as the cursor moves.
-export function SiteContextStrip({ site }: { site: Site | null }) {
+export function SiteContextStrip({ site }: { site: Site | InventorySite | null }) {
   const { localLinks, drift, ensureDrift } = useStore()
-  const link = site ? localLinks.get(site.id) : undefined
+  // External (non-SpinupWP) sites have numeric-string ids that won't match the
+  // localLinks map (keyed by SpinupWP site id). Treat them as unlinked.
+  const siteId = site && "server_id" in site ? site.id : undefined
+  const link = siteId != null ? localLinks.get(siteId as number) : undefined
   const state = link ? resolveLocalLink(link) : null
   const canOpen = !!state?.exists
   const hasLocalUrl = !!link?.localUrl
-  const d = site ? drift.get(site.id) : undefined
+  const d = siteId != null ? drift.get(siteId as number) : undefined
+  const siteName = site ? ("domain" in site ? site.domain : site.name) : null
 
   // Auto-compute (and cache) git drift when a linked, on-disk copy is shown.
   useEffect(() => {
-    if (site && link && state?.exists) ensureDrift(site.id, link.path)
-  }, [site?.id, link?.path, state?.exists, ensureDrift])
+    if (siteId != null && link && state?.exists) ensureDrift(siteId as number, link.path)
+  }, [siteId, link?.path, state?.exists, ensureDrift])
 
   return (
     <box
@@ -260,11 +309,16 @@ export function SiteContextStrip({ site }: { site: Site | null }) {
           <text content="◆ " fg={theme.good} style={{ flexShrink: 0 }} />
           <text content="linked locally    " fg={theme.textDim} style={{ flexShrink: 0 }} />
           <text content="↑N " fg={theme.warn} style={{ flexShrink: 0 }} />
-          <text content="pending WordPress updates" fg={theme.textDim} wrapMode="none" style={{ flexShrink: 1 }} />
+          <text content="pending WordPress updates" fg={theme.textDim} wrapMode="none" style={{ flexGrow: 1, flexShrink: 1 }} />
         </box>
       ) : !link ? (
         <box style={{ flexDirection: "row" }}>
-          <text content={truncate(site.domain, 44)} fg={theme.text} wrapMode="none" style={{ flexShrink: 1 }} />
+          <text content={truncate(siteName ?? "", 44)} fg={theme.text} wrapMode="none" style={{ flexGrow: 1, flexShrink: 1 }} />
+          <text content="  not linked" fg={theme.textFaint} wrapMode="none" style={{ flexShrink: 0 }} />
+        </box>
+      ) : !link ? (
+        <box style={{ flexDirection: "row" }}>
+          <text content={truncate(siteName ?? "", 44)} fg={theme.text} wrapMode="none" style={{ flexGrow: 1, flexShrink: 1 }} />
           <text content="  not linked" fg={theme.textFaint} wrapMode="none" style={{ flexShrink: 0 }} />
         </box>
       ) : !state!.exists ? (
@@ -291,7 +345,7 @@ export function SiteContextStrip({ site }: { site: Site | null }) {
         <box style={{ flexDirection: "row" }}>
           <Act keyName="t" label="terminal" on={canOpen} />
           <Act keyName="v" label="local URL" on={canOpen && hasLocalUrl} />
-          <Act keyName="L" label={link ? "edit / unlink" : "link a local copy"} on />
+          <Act keyName="L" label={link ? "edit / unlink" : "link a local copy"} on={siteId != null} />
         </box>
       ) : (
         <text content="Select a site to link a local copy and open it locally (t · v · L)" fg={theme.textFaint} wrapMode="none" />

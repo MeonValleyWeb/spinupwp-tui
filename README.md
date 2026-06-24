@@ -173,6 +173,16 @@ These can be set in `config.json` or via an environment variable:
   project `.env` won't take effect for the globally-installed `spinup` run from
   elsewhere. For a persistent, location-independent setting, use `config.json`.
 
+### Additional providers
+
+Set a token to pull a provider's inventory alongside your SpinupWP servers and
+sites. Vercel projects appear in Search and the Dashboard provider summary.
+
+- **`VERCEL_TOKEN`** — a Vercel API token (create one at
+  `vercel.com/account/tokens`). Optional **`VERCEL_TEAM_ID`** scopes the token
+  to a team. Both can be set in `.env` or in `config.json` under
+  `"hostingTokens": { "vercel": "...", "vercelTeamId": "..." }`.
+
 ## Keybindings
 
 | Key | Action |

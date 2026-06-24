@@ -13,16 +13,19 @@ import { Panel, Field, StatusBadge, SiteMetaCell, Spinner } from "../components.
 import { isDbBackupInFlight } from "../../lib/dbBackup.ts"
 import { isDbSyncInFlight } from "../../lib/dbSync.ts"
 import { List, moveSelection } from "../List.tsx"
-import { ServerDetail, SiteDetail } from "../Details.tsx"
+import { ServerDetail, SiteDetail, ExternalSiteDetail } from "../Details.tsx"
 import { StatusBar } from "../StatusBar.tsx"
 import { openUrl } from "../../lib/open.ts"
 import { serverWebUrl, siteWebUrl } from "../../lib/spinupweb.ts"
 import { useStore } from "../store.tsx"
 import type { Server, Site } from "../../api/types.ts"
+import type { InventorySite } from "../../providers/types.ts"
+import { vercelProjectUrl } from "../../providers/vercel.ts"
 
 type Result =
   | { kind: "server"; server: Server; haystack: string }
   | { kind: "site"; site: Site; haystack: string }
+  | { kind: "external-site"; site: InventorySite; haystack: string }
 
 // Lower score = better match. Returns null when there's no match at all.
 function score(haystack: string, q: string): number | null {
@@ -34,7 +37,7 @@ function score(haystack: string, q: string): number | null {
 
 export function Search({ rows }: { rows: number }) {
   const store = useStore()
-  const { servers, sites, serverById, setInputMode, setRoute, route, overlayOpen, setHealthServer, setPhpUpgradeSite, setServerActionsServer, accountSlug, localLinks, setLocalLinkSite, openLocalTerminal, openLocalUrl, sshSite, setDnsInventoryServer, setDbBackupSite, dbBackups, setDbSyncSite, dbSyncs, localSync } = store
+  const { servers, sites, serverById, setInputMode, setRoute, route, overlayOpen, setHealthServer, setPhpUpgradeSite, setServerActionsServer, accountSlug, vercelTeamId, localLinks, setLocalLinkSite, openLocalTerminal, openLocalUrl, sshSite, setDnsInventoryServer, setDbBackupSite, dbBackups, setDbSyncSite, dbSyncs, localSync } = store
   const [query, setQuery] = useState("")
   const [selected, setSelected] = useState(0)
   // "query" = typing/filtering (input focused); "actions" = input blurred so the
@@ -64,8 +67,16 @@ export function Search({ rows }: { rows: number }) {
       site,
       haystack: `${site.domain} ${site.site_user ?? ""}`.toLowerCase(),
     }))
-    return [...s, ...t]
-  }, [servers, sites])
+    // Multi-provider inventory: external sites (e.g. Vercel projects).
+    const ext: Result[] = store.providerInventories.flatMap((inv) =>
+      inv.sites.map((site) => ({
+        kind: "external-site" as const,
+        site,
+        haystack: `${site.name} ${site.primaryDomain ?? ""} ${site.domains.join(" ")}`.toLowerCase(),
+      })),
+    )
+    return [...s, ...t, ...ext]
+  }, [servers, sites, store.providerInventories])
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -74,8 +85,8 @@ export function Search({ rows }: { rows: number }) {
       .filter((x) => x.sc !== null) as { r: Result; sc: number }[]
     scored.sort((a, b) => {
       if (a.sc !== b.sc) return a.sc - b.sc
-      const an = a.r.kind === "server" ? a.r.server.name : a.r.site.domain
-      const bn = b.r.kind === "server" ? b.r.server.name : b.r.site.domain
+      const an = a.r.kind === "server" ? a.r.server.name : a.r.kind === "site" ? a.r.site.domain : a.r.site.name
+      const bn = b.r.kind === "server" ? b.r.server.name : b.r.kind === "site" ? b.r.site.domain : b.r.site.name
       return an.localeCompare(bn)
     })
     return scored.map((x) => x.r)
@@ -102,6 +113,23 @@ export function Search({ rows }: { rows: number }) {
     openUrl(url)
     flashMsg(accountSlug ? "Opening in SpinupWP…" : "Set accountSlug for deep links — opening dashboard")
   }
+  const openExternalSite = (s: InventorySite) => {
+    const url = s.latestDeployment?.url ?? (s.primaryDomain ? `https://${s.primaryDomain}` : null)
+    if (url) {
+      openUrl(url)
+      flashMsg(`Opening ${s.name}…`)
+    } else {
+      flashMsg("No URL available for this project")
+    }
+  }
+  const openExternalConsole = (s: InventorySite) => {
+    if (s.provider === "vercel") {
+      openUrl(vercelProjectUrl(s.nativeId, vercelTeamId))
+      flashMsg("Opening in Vercel…")
+    } else {
+      flashMsg(`No console link for ${s.provider}`)
+    }
+  }
 
   useKeyboard((key) => {
     if (!isActive) return
@@ -118,6 +146,7 @@ export function Search({ rows }: { rows: number }) {
       switch (name) {
         case "return":
           if (current?.kind === "site") openSite(current.site)
+          else if (current?.kind === "external-site") openExternalSite(current.site)
           return
         case "tab":
         case "right":
@@ -136,10 +165,12 @@ export function Search({ rows }: { rows: number }) {
         return setFocus("query")
       case "o":
         if (current?.kind === "site") openSite(current.site)
+        else if (current?.kind === "external-site") openExternalSite(current.site)
         return
       case "w":
         if (current?.kind === "site") openInSpinup(siteWebUrl(current.site.id, accountSlug))
         else if (current?.kind === "server") openInSpinup(serverWebUrl(current.server.id, accountSlug))
+        else if (current?.kind === "external-site") openExternalConsole(current.site)
         return
       case "u":
         if (current?.kind === "site") setPhpUpgradeSite(current.site)
@@ -223,7 +254,14 @@ export function Search({ rows }: { rows: number }) {
             { key: "h", label: "health" },
             { key: "←/esc", label: "back" },
           ]
-        : [
+        : current?.kind === "external-site"
+          ? [
+              { key: "↑↓", label: "select" },
+              { key: "o", label: "open" },
+              { key: "w", label: "console" },
+              { key: "←/esc", label: "back" },
+            ]
+          : [
             { key: "↑↓", label: "select" },
             { key: "o", label: "open" },
             { key: "s", label: "SSH" },
@@ -266,7 +304,7 @@ export function Search({ rows }: { rows: number }) {
             viewportRows={listRows}
             focused={focus === "query"}
             emptyText={query ? "No matches" : "Start typing to search across your whole account"}
-            keyFor={(r, i) => (r.kind === "server" ? `s${r.server.id}` : `w${r.site.id}`) + i}
+            keyFor={(r, i) => (r.kind === "server" ? `s${r.server.id}` : r.kind === "site" ? `w${r.site.id}` : `e${r.site.id}`) + i}
             renderRow={(r, sel) => {
               if (r.kind === "server") {
                 return (
@@ -276,6 +314,15 @@ export function Search({ rows }: { rows: number }) {
                     <text content={truncate(r.server.name, 44)} fg={sel ? theme.text : theme.textDim} wrapMode="none" style={{ flexGrow: 1, flexShrink: 1, marginRight: 1 }} />
                     {r.server.reboot_required && <text content="↻rbt " fg={sel ? theme.text : theme.warn} style={{ flexShrink: 0 }} />}
                     <text content={r.server.provider_name ?? ""} fg={sel ? theme.text : theme.textFaint} style={{ flexShrink: 0 }} />
+                  </>
+                )
+              }
+              if (r.kind === "external-site") {
+                return (
+                  <>
+                    <text content={providerTag(r.site.provider)} fg={sel ? theme.text : theme.purple} style={{ flexShrink: 0 }} />
+                    <text content={truncate(r.site.name, 44)} fg={sel ? theme.text : theme.textDim} wrapMode="none" style={{ flexGrow: 1, flexShrink: 1, marginRight: 1 }} />
+                    <text content={r.site.stack ?? ""} fg={sel ? theme.text : theme.textFaint} style={{ flexShrink: 0 }} />
                   </>
                 )
               }
@@ -326,11 +373,13 @@ export function Search({ rows }: { rows: number }) {
           ) : focus === "actions" ? (
             <ActionsCard
               result={current}
-              serverName={current.kind === "site" ? (serverById(current.site.server_id)?.name ?? "—") : current.server.name}
+              serverName={current.kind === "site" ? (serverById(current.site.server_id)?.name ?? "—") : current.kind === "external-site" ? "—" : current.server.name}
               localSync={localSync}
             />
           ) : current.kind === "server" ? (
             <ServerDetail server={current.server} siteCount={store.sitesForServer(current.server.id).length} />
+          ) : current.kind === "external-site" ? (
+            <ExternalSiteDetail site={current.site} />
           ) : (
             <SiteDetail site={current.site} serverName={serverById(current.site.server_id)?.name ?? "—"} />
           )}
@@ -347,6 +396,23 @@ export function Search({ rows }: { rows: number }) {
 // discoverable and scales as more actions land. A site gets the full set; a
 // server gets just the open + server actions.
 type ActionGroup = { title: string; items: [string, string][] }
+
+// Short 4-char tag for a provider in search result rows.
+function providerTag(provider: string): string {
+  switch (provider) {
+    case "vercel": return "VERC"
+    case "netlify": return "NETL"
+    case "cloudflare": return "CFPG"
+    case "hetzner": return "HETZ"
+    case "digitalocean": return "DO"
+    default: return provider.slice(0, 4).toUpperCase()
+  }
+}
+
+// Actions for an external (non-SpinupWP) site — just open + console.
+const EXTERNAL_SITE_GROUPS: ActionGroup[] = [
+  { title: "Open", items: [["o", "Open site in browser"], ["w", "Open in provider console"]] },
+]
 
 // The DB backup/sync use wp-cli, so they only apply to WordPress sites — omitted
 // for non-WP sites (their `d`/`p` keypresses are also guarded in the handler). DNS
@@ -383,9 +449,10 @@ const SERVER_GROUPS: ActionGroup[] = [
 
 function ActionsCard({ result, serverName, localSync }: { result: Result; serverName: string; localSync: boolean }) {
   const isSite = result.kind === "site"
-  const name = isSite ? result.site.domain : result.server.name
-  const status = isSite ? result.site.status : result.server.connection_status
-  const groups = isSite ? siteGroups(result.site.is_wordpress, localSync) : SERVER_GROUPS
+  const isExternal = result.kind === "external-site"
+  const name = isSite ? result.site.domain : isExternal ? result.site.name : result.server.name
+  const status = isSite ? result.site.status : isExternal ? result.site.status : result.server.connection_status
+  const groups = isSite ? siteGroups(result.site.is_wordpress, localSync) : isExternal ? EXTERNAL_SITE_GROUPS : SERVER_GROUPS
   return (
     <box style={{ flexDirection: "column" }}>
       <box style={{ flexDirection: "row" }}>
@@ -400,6 +467,14 @@ function ActionsCard({ result, serverName, localSync }: { result: Result; server
           <Field label="Server" value={truncate(serverName, 28)} labelWidth={8} />
           <Field label="PHP" value={result.site.php_version ?? "—"} labelWidth={8} />
           <Field label="Stack" value={classifyStack(result.site)} valueColor={stackColor(classifyStack(result.site))} labelWidth={8} />
+        </>
+      ) : isExternal ? (
+        <>
+          <text content={result.site.primaryDomain ?? "—"} fg={theme.accent} wrapMode="none" />
+          <box style={{ height: 1 }} />
+          <Field label="Provider" value={result.site.provider} labelWidth={9} />
+          <Field label="Stack" value={result.site.stack ?? "—"} labelWidth={9} />
+          {result.site.latestDeployment ? <Field label="Deploy" value={result.site.latestDeployment.status} labelWidth={9} /> : null}
         </>
       ) : (
         <>

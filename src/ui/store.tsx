@@ -37,6 +37,8 @@ import { StackCache, siteSignature, type CachedProbe } from "../lib/stackCache.t
 import { resolvePhpEolDates, refreshPhpEolDates, isPhpEol as isPhpEolWith, offeredPhpVersions as offeredPhpVersionsWith, type PhpEolDates } from "../lib/phpEol.ts"
 import { planDbBackup, runDbBackup, type DbBackupProgress, type PlanResult } from "../lib/dbBackup.ts"
 import { planDbSync, runDbSync, type DbSyncProgress, type SyncPlanResult } from "../lib/dbSync.ts"
+import { buildAdapters } from "../providers/registry.ts"
+import type { ProviderInventory } from "../providers/types.ts"
 
 export type Route = "dashboard" | "servers" | "stacks" | "search" | "events"
 
@@ -224,6 +226,8 @@ interface StoreValue extends DataState {
   localSync: boolean
   // SpinupWP account slug (from env/config) for building web deep links.
   accountSlug: string | null
+  // Vercel team ID (from env/config) for building Vercel console deep links.
+  vercelTeamId: string | null
   sitesForServer: (serverId: number) => Site[]
   serverById: (id: number | null | undefined) => Server | undefined
   // Tier-2 stack probes (on-demand SSH), hydrated from disk at startup.
@@ -303,6 +307,13 @@ interface StoreValue extends DataState {
   isPhpEol: (version: string | null | undefined) => boolean
   // PHP versions to offer in the upgrade picker (dynamic; current always included).
   offeredPhpVersions: (current?: string | null) => string[]
+  // Multi-provider inventory (expansion). Each entry is a loaded provider's
+  // normalized resources (sites, deployments, domains). Loaded alongside the
+  // SpinupWP refresh; provider errors are non-fatal (like events).
+  providerInventories: ProviderInventory[]
+  // Per-provider error messages (keyed by provider key), if a provider's load
+  // failed. Empty when all configured providers loaded successfully.
+  providerErrors: Map<string, string>
 }
 
 const StoreContext = createContext<StoreValue | null>(null)
@@ -416,6 +427,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  // Multi-provider adapters — built once from the resolved config. Only
+  // providers with a configured token produce an adapter.
+  const adaptersRef = useRef(buildAdapters(cfgRef.current))
+  const [providerInventories, setProviderInventories] = useState<ProviderInventory[]>([])
+  const [providerErrors, setProviderErrors] = useState<Map<string, string>>(new Map())
+
   const refresh = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -441,6 +458,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setReady(true) // allow the app to render the error state rather than hang on splash
     } finally {
       setLoading(false)
+    }
+
+    // Load multi-provider inventories (non-fatal — a provider error doesn't
+    // break the SpinupWP core). Each adapter loads independently.
+    if (adaptersRef.current.length > 0) {
+      const results = await Promise.allSettled(adaptersRef.current.map((a) => a.loadInventory()))
+      const ok: ProviderInventory[] = []
+      const errs = new Map<string, string>()
+      for (let i = 0; i < results.length; i++) {
+        const r = results[i]
+        if (r.status === "fulfilled") ok.push(r.value)
+        else errs.set(adaptersRef.current[i].provider, (r.reason as Error).message)
+      }
+      setProviderInventories(ok)
+      setProviderErrors(errs)
     }
   }, [client])
 
@@ -1267,6 +1299,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     sshUser: cfgRef.current.sshUser,
     localSync: cfgRef.current.localSync,
     accountSlug: cfgRef.current.accountSlug,
+    vercelTeamId: cfgRef.current.hostingTokens.vercelTeamId,
     sitesForServer,
     serverById,
     probes,
@@ -1310,6 +1343,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     clearTtlWrite,
     isPhpEol,
     offeredPhpVersions,
+    providerInventories,
+    providerErrors,
   }
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>

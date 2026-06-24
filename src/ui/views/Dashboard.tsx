@@ -6,6 +6,7 @@ import { formatBytes, diskUsedPct, bar, truncate, timeAgo } from "../../lib/form
 import { Panel } from "../components.tsx"
 import { useStore } from "../store.tsx"
 import type { Server } from "../../api/types.ts"
+import type { ProviderInventory } from "../../providers/types.ts"
 
 // A single headline metric card. Height 5 = 2 border rows + 3 content lines.
 function Stat({ label, value, color = theme.text, sub }: { label: string; value: string; color?: string; sub?: string }) {
@@ -27,7 +28,7 @@ function serverDiskFraction(s: Server): number {
 }
 
 export function Dashboard({ rows }: { rows: number }) {
-  const { servers, sites, events } = useStore()
+  const { servers, sites, events, providerInventories, providerErrors } = useStore()
 
   const agg = useMemo(() => {
     const connected = servers.filter((s) => s.connection_status === "connected").length
@@ -49,6 +50,26 @@ export function Dashboard({ rows }: { rows: number }) {
     return { connected, reboot, upgrade, used, total, wp, pluginUpd, themeUpd, coreUpd, https }
   }, [servers, sites])
 
+  // Aggregate multi-provider site counts (non-SpinupWP providers).
+  const providerSummary = useMemo(() => {
+    const entries: { provider: string; label: string; sites: number; deployments: number; domains: number; error?: string }[] = []
+    for (const inv of providerInventories) {
+      entries.push({
+        provider: inv.provider,
+        label: inv.account.label,
+        sites: inv.sites.length,
+        deployments: inv.deployments.length,
+        domains: inv.domains.length,
+      })
+    }
+    for (const [provider, error] of providerErrors) {
+      entries.push({ provider, label: provider, sites: 0, deployments: 0, domains: 0, error })
+    }
+    return entries
+  }, [providerInventories, providerErrors])
+
+  const hasProviders = providerSummary.length > 0
+
   // Servers sorted by disk pressure (busiest first) for the watchlist.
   const byDisk = useMemo(
     () => [...servers].sort((a, b) => serverDiskFraction(b) - serverDiskFraction(a)),
@@ -66,7 +87,7 @@ export function Dashboard({ rows }: { rows: number }) {
   }, [servers])
 
   const diskPct = agg.total > 0 ? (agg.used / agg.total) * 100 : 0
-  const listRows = Math.max(3, rows - 9) // minus the stat-card band (5), status bar, and panel chrome
+  const listRows = Math.max(3, rows - 9 - (hasProviders ? 2 : 0)) // minus stat cards, provider band, status bar, chrome
 
   return (
     <box style={{ flexGrow: 1, flexDirection: "column", padding: 1 }}>
@@ -93,6 +114,28 @@ export function Dashboard({ rows }: { rows: number }) {
           sub={`${agg.reboot} reboot · ${agg.upgrade} upgrade`}
         />
       </box>
+
+      {/* Multi-provider summary — only when additional providers are configured */}
+      {hasProviders ? (
+        <box style={{ flexDirection: "row", height: 1, marginTop: 1, gap: 2 }}>
+          <text content="Providers:  " fg={theme.textDim} style={{ flexShrink: 0 }} />
+          {providerSummary.map((p) => (
+            <box key={p.provider} style={{ flexDirection: "row", flexShrink: 0 }}>
+              {p.error ? (
+                <text content={`${p.label}: ${truncate(p.error, 30)}`} fg={theme.bad} wrapMode="none" />
+              ) : (
+                <>
+                  <text content={p.label} fg={theme.accent} wrapMode="none" />
+                  <text content={` ${p.sites} site${p.sites === 1 ? "" : "s"}`} fg={theme.textDim} wrapMode="none" />
+                  {p.deployments > 0 ? <text content={` · ${p.deployments} dep`} fg={theme.textFaint} wrapMode="none" /> : null}
+                  {p.domains > 0 ? <text content={` · ${p.domains} dom`} fg={theme.textFaint} wrapMode="none" /> : null}
+                </>
+              )}
+              <text content="  " />
+            </box>
+          ))}
+        </box>
+      ) : null}
 
       {/* Two columns: disk watchlist + attention/activity */}
       <box style={{ flexGrow: 1, flexDirection: "row", gap: 1, marginTop: 1 }}>

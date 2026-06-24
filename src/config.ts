@@ -45,6 +45,17 @@ export interface AppConfig {
   // from the stored config and the environment. Env-sourced connections carry
   // `env: true` and are read-only in the UI. Secrets live here (file is chmod 600).
   providerConnections: Record<ConnProvider, Connection[]>
+  // Hosting provider tokens (multi-provider expansion). Each entry is a token
+  // for a hosting/server platform's API. Env-sourced tokens take precedence.
+  // Secrets live in config.json (chmod 600), same as DNS connections.
+  hostingTokens: HostingTokens
+}
+
+// Hosting provider API tokens. Future providers (netlify, hetzner, …) add a
+// field here + an env var in loadConfig().
+export interface HostingTokens {
+  vercel: string | null
+  vercelTeamId: string | null
 }
 
 // Stored connection (no `provider`/`env` discriminators — added on load).
@@ -82,6 +93,7 @@ export interface StoredConfig {
   localSites?: Record<string, LocalLink>
   localSync?: boolean
   providers?: StoredProviders
+  hostingTokens?: Partial<HostingTokens>
 }
 
 export function configDir(): string {
@@ -159,6 +171,10 @@ export function loadConfig(): AppConfig {
     localRoots: stored.localRoots ?? [],
     localSites: stored.localSites ?? {},
     providerConnections,
+    hostingTokens: {
+      vercel: process.env.VERCEL_TOKEN?.trim() || stored.hostingTokens?.vercel?.trim() || null,
+      vercelTeamId: process.env.VERCEL_TEAM_ID?.trim() || stored.hostingTokens?.vercelTeamId?.trim() || null,
+    },
   }
 }
 
